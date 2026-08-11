@@ -1,0 +1,168 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import request from 'supertest';
+import { createApp } from './app.js';
+import { hasDatabase } from './test/setup.js';
+import { initRedis } from './lib/redis.js';
+
+const app = createApp();
+
+describe.skipIf(!hasDatabase)('CommerceNest integration flows', () => {
+  beforeAll(async () => {
+    await initRedis();
+  });
+
+  it('master admin login + platform analytics', async () => {
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@commercenest.com',
+      password: 'Admin123!',
+    });
+    expect(login.status).toBe(200);
+    const token = login.body.accessToken as string;
+
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(me.status).toBe(200);
+    const meUser = me.body.user ?? me.body;
+    expect(meUser.role).toBe('MASTER_ADMIN');
+
+    const summary = await request(app)
+      .get('/api/admin/analytics/summary')
+      .set('Authorization', `Bearer ${token}`);
+    expect(summary.status).toBe(200);
+    const storeTotal = Object.values(
+      (summary.body.storesByStatus ?? {}) as Record<string, number>,
+    ).reduce((a: number, b) => a + Number(b), 0);
+    expect(storeTotal || summary.body.totalOrders).toBeTruthy();
+  });
+
+  it('store A cannot read store B products (tenant isolation)', async () => {
+    const loginA = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    const loginB = await request(app).post('/api/auth/login').send({
+      email: 'owner@rahimmobile.bd',
+      password: 'Owner123!',
+    });
+    expect(loginA.status).toBe(200);
+    expect(loginB.status).toBe(200);
+
+    const tokenA = loginA.body.accessToken as string;
+    const storeBId = loginB.body.user.storeId as string;
+
+    const res = await request(app)
+      .get(`/api/store/${storeBId}/products`)
+      .set('Authorization', `Bearer ${tokenA}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('TENANT_MISMATCH');
+  });
+
+  it('storefront home uses published theme only + lists products', async () => {
+    const home = await request(app).get('/api/storefront/techworld-bd/home');
+    expect(home.status).toBe(200);
+    expect(home.body.store.slug).toBe('techworld-bd');
+    expect(home.body.featuredProducts?.length).toBeGreaterThan(0);
+    if (home.body.theme) {
+      expect(home.body.theme.status).toBe('PUBLISHED');
+      expect(home.body.theme.themeSettings).toBeTruthy();
+    }
+  });
+
+  it('MANUAL_BKASH checkout creates PENDING_VERIFICATION order; staff can approve', async () => {
+    const products = await request(app).get(
+      '/api/storefront/techworld-bd/products?limit=1',
+    );
+    expect(products.status).toBe(200);
+    const list = products.body.items ?? products.body.data ?? products.body;
+    const product = Array.isArray(list) ? list[0] : null;
+    expect(product).toBeTruthy();
+    const variant = product.variants?.[0];
+    expect(variant?.id).toBeTruthy();
+
+    const checkout = await request(app)
+      .post('/api/storefront/techworld-bd/checkout')
+      .send({
+        paymentMethod: 'MANUAL_BKASH',
+        customerName: 'Test Buyer',
+        customerPhone: '01712345678',
+        preferredLocale: 'bn',
+        deliveryAddress: {
+          label: 'Home',
+          line1: 'House 1, Road 2',
+          area: 'Banani',
+          district: 'Dhaka',
+          division: 'Dhaka',
+          postalCode: '1213',
+          recipientName: 'Test Buyer',
+          recipientPhone: '01712345678',
+        },
+        items: [
+          {
+            productId: product.id,
+            variantId: variant.id,
+            quantity: 1,
+          },
+        ],
+        bkashTxnId: 'TXNTEST123456',
+        bkashSenderPhone: '01712345678',
+      });
+
+    if (![200, 201].includes(checkout.status)) {
+      // Surface validation errors for debugging
+      throw new Error(
+        `Checkout failed ${checkout.status}: ${JSON.stringify(checkout.body)}`,
+      );
+    }
+    const orderId = (checkout.body.orderId ??
+      checkout.body.order?.id) as string;
+    expect(orderId).toBeTruthy();
+    expect(checkout.body.paymentStatus).toBe('PENDING_VERIFICATION');
+
+    const staffLogin = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    const token = staffLogin.body.accessToken as string;
+    const storeId = staffLogin.body.user.storeId as string;
+
+    const pending = await request(app)
+      .get(`/api/store/${storeId}/payments/pending-bkash`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(pending.status).toBe(200);
+
+    const approve = await request(app)
+      .post(`/api/store/${storeId}/payments/bkash/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ orderId, approved: true });
+    expect(approve.status).toBe(200);
+    expect(approve.body.paymentStatus).toBe('APPROVED');
+  });
+
+  it('resolve-host returns store for seeded subdomain hostname', async () => {
+    const res = await request(app)
+      .post('/api/storefront/resolve-host')
+      .send({ host: 'techworld-bd.commercenest.local' });
+    expect(res.status).toBe(200);
+    expect(res.body.slug || res.body.store?.slug).toBe('techworld-bd');
+  });
+
+  it('master admin can create announcement', async () => {
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@commercenest.com',
+      password: 'Admin123!',
+    });
+    const token = login.body.accessToken as string;
+    const created = await request(app)
+      .post('/api/admin/announcements')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: 'Maintenance window',
+        body: 'Platform maintenance tonight 2-3am BD time.',
+        status: 'PUBLISHED',
+        audience: { all: true },
+      });
+    expect([200, 201]).toContain(created.status);
+    expect(created.body.title).toBe('Maintenance window');
+  });
+});

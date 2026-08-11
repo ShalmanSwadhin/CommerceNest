@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @commercenest/types
+      - run: npm run generate -w @commercenest/prisma
+      - run: npm run typecheck -w @commercenest/api
+      - run: npm run test -w @commercenest/api
+      - run: npm run build -w @commercenest/api
+      - run: npm run build -w @commercenest/admin-panel
+      - run: npm run build -w @commercenest/store-dashboard
+      - run: npm run build -w @commercenest/storefront

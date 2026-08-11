@@ -1,0 +1,38 @@
+{
+  "name": "commercenest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CommerceNest — Multi-tenant e-commerce SaaS platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev-stack.mjs",
+    "dev:raw": "npm run dev --workspaces --if-present",
+    "dev:gateway": "node scripts/dev-gateway.mjs",
+    "dev:api": "node scripts/with-env.mjs npm run dev -w @commercenest/api",
+    "dev:admin": "node scripts/with-env.mjs npm run dev -w @commercenest/admin-panel",
+    "dev:dashboard": "node scripts/with-env.mjs npm run dev -w @commercenest/store-dashboard",
+    "dev:storefront": "node scripts/with-env.mjs npm run dev -w @commercenest/storefront",
+    "dev:marketing": "node scripts/with-env.mjs npm run dev -w @commercenest/marketing",
+    "test:e2e": "node scripts/e2e-smoke.mjs",
+    "build": "npm run build -w @commercenest/types && npm run build -w @commercenest/prisma && npm run build -w @commercenest/api && npm run build -w @commercenest/admin-panel && npm run build -w @commercenest/store-dashboard && npm run build -w @commercenest/storefront && npm run build -w @commercenest/marketing",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:up": "node scripts/start-dev-db.mjs",
+    "db:generate": "node scripts/with-env.mjs npm run generate -w @commercenest/prisma",
+    "db:migrate": "node scripts/with-env.mjs npm run migrate:dev -w @commercenest/prisma",
+    "db:seed": "node scripts/with-env.mjs npm run seed -w @commercenest/api",
+    "db:push": "node scripts/with-env.mjs npm run push -w @commercenest/prisma"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "CommerceNest",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

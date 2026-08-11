@@ -1,0 +1,160 @@
+/**
+ * CommerceNest CSS custom properties — aligned to visual reference board.
+ * Import in your app: @import '@commercenest/ui/tokens.css';
+ */
+
+:root {
+  /* Brand — reference purple + navy */
+  --cn-color-primary: #6c1db3;
+  --cn-color-primary-hover: #5a1896;
+  --cn-color-primary-subtle: #f3e8ff;
+  --cn-color-primary-foreground: #ffffff;
+  --cn-color-admin-sidebar: #0f172a;
+  --cn-color-amber-impersonation: #f59e0b;
+
+  /* Text */
+  --cn-color-text-primary: #0f172a;
+  --cn-color-text-secondary: #475569;
+  --cn-color-text-tertiary: #94a3b8;
+  --cn-color-text-inverse: #f8fafc;
+  --cn-color-text-link: #6c1db3;
+  --cn-color-text-link-hover: #5a1896;
+
+  /* Surfaces */
+  --cn-color-surface-base: #ffffff;
+  --cn-color-surface-raised: #f8fafc;
+  --cn-color-surface-sunken: #f1f5f9;
+  --cn-color-surface-overlay: #ffffff;
+  --cn-color-surface-muted: #e2e8f0;
+
+  /* Borders */
+  --cn-color-border-default: #e2e8f0;
+  --cn-color-border-strong: #cbd5e1;
+  --cn-color-border-input: #64748b;
+  --cn-color-border-focus: #6c1db3;
+
+  /* Status */
+  --cn-color-success: #16a34a;
+  --cn-color-success-subtle: #dcfce7;
+  --cn-color-success-border: #86efac;
+  --cn-color-caution: #f59e0b;
+  --cn-color-caution-subtle: #fef3c7;
+  --cn-color-caution-border: #fcd34d;
+  --cn-color-danger: #ef4444;
+  --cn-color-danger-subtle: #fee2e2;
+  --cn-color-danger-border: #fca5a5;
+  --cn-color-info: #3b82f6;
+  --cn-color-info-subtle: #dbeafe;
+  --cn-color-info-border: #93c5fd;
+  --cn-color-neutral: #64748b;
+  --cn-color-neutral-subtle: #f1f5f9;
+  --cn-color-neutral-border: #cbd5e1;
+
+  /* Spacing (4px base) */
+  --cn-space-0: 0px;
+  --cn-space-1: 4px;
+  --cn-space-2: 8px;
+  --cn-space-3: 12px;
+  --cn-space-4: 16px;
+  --cn-space-5: 20px;
+  --cn-space-6: 24px;
+  --cn-space-7: 28px;
+  --cn-space-8: 32px;
+  --cn-space-9: 36px;
+  --cn-space-10: 40px;
+  --cn-space-11: 44px;
+  --cn-space-12: 48px;
+  --cn-space-13: 52px;
+  --cn-space-14: 56px;
+  --cn-space-15: 60px;
+  --cn-space-16: 64px;
+  --cn-space-17: 68px;
+  --cn-space-18: 72px;
+  --cn-space-19: 76px;
+  --cn-space-20: 80px;
+
+  /* Radius */
+  --cn-radius-sm: 6px;
+  --cn-radius-md: 10px;
+  --cn-radius-lg: 12px;
+  --cn-radius-xl: 16px;
+  --cn-radius-full: 9999px;
+
+  /* Shadows */
+  --cn-shadow-0: none;
+  --cn-shadow-1: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --cn-shadow-2: 0 1px 3px 0 rgb(15 23 42 / 0.08),
+    0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --cn-shadow-3: 0 4px 12px -2px rgb(15 23 42 / 0.08),
+    0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --cn-shadow-4: 0 12px 24px -6px rgb(15 23 42 / 0.12),
+    0 4px 8px -4px rgb(15 23 42 / 0.08);
+
+  /* Motion */
+  --cn-duration-instant: 0ms;
+  --cn-duration-fast: 100ms;
+  --cn-duration-normal: 200ms;
+  --cn-duration-slow: 300ms;
+  --cn-duration-slower: 500ms;
+  --cn-easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Typography — Inter per visual reference */
+  --cn-font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Focus */
+  --cn-focus-ring-width: 2px;
+  --cn-focus-ring-offset: 2px;
+  --cn-focus-ring-color: var(--cn-color-primary);
+}
+
+[data-theme="dark"] {
+  --cn-color-primary: #a855f7;
+  --cn-color-primary-hover: #c084fc;
+  --cn-color-primary-subtle: #3b0764;
+  --cn-color-primary-foreground: #ffffff;
+  --cn-color-admin-sidebar: #020617;
+  --cn-color-amber-impersonation: #fbbf24;
+
+  --cn-color-text-primary: #f8fafc;
+  --cn-color-text-secondary: #cbd5e1;
+  --cn-color-text-tertiary: #64748b;
+  --cn-color-text-inverse: #0f172a;
+  --cn-color-text-link: #c084fc;
+  --cn-color-text-link-hover: #e9d5ff;
+
+  --cn-color-surface-base: #0f172a;
+  --cn-color-surface-raised: #1e293b;
+  --cn-color-surface-sunken: #020617;
+  --cn-color-surface-overlay: #1e293b;
+  --cn-color-surface-muted: #334155;
+
+  --cn-color-border-default: #334155;
+  --cn-color-border-strong: #475569;
+  --cn-color-border-input: #94a3b8;
+  --cn-color-border-focus: #a855f7;
+
+  --cn-color-success: #22c55e;
+  --cn-color-success-subtle: #14532d;
+  --cn-color-success-border: #166534;
+  --cn-color-caution: #f59e0b;
+  --cn-color-caution-subtle: #451a03;
+  --cn-color-caution-border: #92400e;
+  --cn-color-danger: #ef4444;
+  --cn-color-danger-subtle: #450a0a;
+  --cn-color-danger-border: #991b1b;
+  --cn-color-info: #3b82f6;
+  --cn-color-info-subtle: #1e3a5f;
+  --cn-color-info-border: #1d4ed8;
+  --cn-color-neutral: #94a3b8;
+  --cn-color-neutral-subtle: #1e293b;
+  --cn-color-neutral-border: #475569;
+
+  --cn-shadow-1: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --cn-shadow-2: 0 1px 3px 0 rgb(0 0 0 / 0.4),
+    0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --cn-shadow-3: 0 4px 6px -1px rgb(0 0 0 / 0.4),
+    0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --cn-shadow-4: 0 10px 15px -3px rgb(0 0 0 / 0.4),
+    0 4px 6px -4px rgb(0 0 0 / 0.3);
+}

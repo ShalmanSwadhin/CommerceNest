@@ -1,0 +1,36 @@
+{
+  "name": "@commercenest/prisma",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CommerceNest database schema and Prisma client",
+  "main": "./generated/client/index.js",
+  "types": "./generated/client/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./generated/client/index.d.ts",
+      "default": "./generated/client/index.js"
+    }
+  },
+  "scripts": {
+    "build": "prisma generate",
+    "generate": "prisma generate",
+    "migrate:dev": "node ../../scripts/with-env.mjs prisma migrate dev",
+    "migrate:deploy": "node ../../scripts/with-env.mjs prisma migrate deploy",
+    "migrate:reset": "node ../../scripts/with-env.mjs prisma migrate reset",
+    "db:push": "node ../../scripts/with-env.mjs prisma db push",
+    "push": "node ../../scripts/with-env.mjs prisma db push",
+    "db:seed": "node ../../scripts/with-env.mjs tsx seed.ts",
+    "studio": "node ../../scripts/with-env.mjs prisma studio",
+    "format": "prisma format",
+    "validate": "node ../../scripts/with-env.mjs prisma validate",
+    "typecheck": "node -e \"process.env.DATABASE_URL=process.env.DATABASE_URL||'postgresql://validate:validate@localhost:5432/validate'; require('child_process').execSync('npx prisma validate',{stdio:'inherit',env:process.env})\""
+  },
+  "dependencies": {
+    "@prisma/client": "^6.3.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

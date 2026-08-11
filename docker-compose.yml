@@ -1,0 +1,105 @@
+# CommerceNest V1 — single public port via nginx edge
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-commercenest}
+      POSTGRES_USER: ${POSTGRES_USER:-commercenest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-commercenest}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-commercenest}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-commercenest}:${POSTGRES_PASSWORD:-commercenest}@postgres:5432/${POSTGRES_DB:-commercenest}?schema=public
+      REDIS_URL: redis://redis:6379
+      # Same-origin browser calls come from admin./app./*.<domain>
+      CORS_ALLOW_LOCALHOST_SUBDOMAINS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "4000"
+
+  admin-panel:
+    build:
+      context: .
+      dockerfile: apps/admin-panel/Dockerfile
+      args:
+        # Empty = relative /api through nginx (preferred for single-origin SaaS)
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_STORE_DASHBOARD_URL: ${VITE_STORE_DASHBOARD_URL:-https://app.commercenest.com}
+    restart: unless-stopped
+    depends_on: [api]
+    expose:
+      - "80"
+
+  store-dashboard:
+    build:
+      context: .
+      dockerfile: apps/store-dashboard/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    restart: unless-stopped
+    depends_on: [api]
+    expose:
+      - "80"
+
+  storefront:
+    build:
+      context: .
+      dockerfile: apps/storefront/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_STORE_SLUG: ${VITE_STORE_SLUG:-}
+    restart: unless-stopped
+    depends_on: [api]
+    expose:
+      - "80"
+
+  marketing:
+    build:
+      context: .
+      dockerfile: apps/marketing/Dockerfile
+      args:
+        VITE_ADMIN_URL: ${VITE_ADMIN_URL:-https://admin.commercenest.com}
+        VITE_APP_URL: ${VITE_APP_URL:-https://app.commercenest.com}
+        VITE_SUPPORT_EMAIL: ${VITE_SUPPORT_EMAIL:-}
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on: [api, admin-panel, store-dashboard, storefront, marketing]
+    ports:
+      - "${GATEWAY_PORT:-80}:80"
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  pgdata:
