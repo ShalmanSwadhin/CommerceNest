@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
@@ -30,12 +30,16 @@ export function SettingsPage() {
     category: '',
     bkashNumber: '',
     bkashInstructions: '',
+    shippingInsideDhaka: '',
+    shippingOutsideDhaka: '',
+    freeShippingThreshold: '',
   });
   const [invite, setInvite] = useState({
     name: '',
     email: '',
     role: 'STORE_MANAGER' as (typeof STAFF_ROLES)[number],
   });
+  const initializedForStore = useRef<string | null>(null);
 
   const settingsQ = useQuery({
     queryKey: ['store', storeId, 'settings'],
@@ -49,16 +53,26 @@ export function SettingsPage() {
     enabled: !!storeId,
   });
 
+  // Hydrate the form once per store, not on every refetch — the Save
+  // mutation below invalidates this same query, and re-running this sync
+  // on that refetch would race the in-flight edit and silently overwrite
+  // it with the server echo.
   useEffect(() => {
     const data = settingsQ.data;
-    if (!data) return;
+    if (!data || !storeId || initializedForStore.current === storeId) return;
+    initializedForStore.current = storeId;
     setForm({
       tagline: String(data.tagline ?? ''),
       category: String(data.category ?? ''),
       bkashNumber: String(data.bkashNumber ?? ''),
       bkashInstructions: String(data.bkashInstructions ?? ''),
+      shippingInsideDhaka: data.shippingInsideDhaka != null ? String(data.shippingInsideDhaka) : '',
+      shippingOutsideDhaka:
+        data.shippingOutsideDhaka != null ? String(data.shippingOutsideDhaka) : '',
+      freeShippingThreshold:
+        data.freeShippingThreshold != null ? String(data.freeShippingThreshold) : '',
     });
-  }, [settingsQ.data]);
+  }, [settingsQ.data, storeId]);
 
   const staff = useMemo(() => {
     if (!staffQ.data) return [];
@@ -67,7 +81,25 @@ export function SettingsPage() {
   }, [staffQ.data]);
 
   const mut = useMutation({
-    mutationFn: () => storeApi.updateSettings(storeId!, form),
+    mutationFn: () => {
+      const body: Record<string, unknown> = {
+        tagline: form.tagline,
+        category: form.category,
+        bkashNumber: form.bkashNumber,
+        bkashInstructions: form.bkashInstructions,
+      };
+      if (form.shippingInsideDhaka.trim() !== '') {
+        body.shippingInsideDhaka = Number(form.shippingInsideDhaka);
+      }
+      if (form.shippingOutsideDhaka.trim() !== '') {
+        body.shippingOutsideDhaka = Number(form.shippingOutsideDhaka);
+      }
+      body.freeShippingThreshold =
+        form.freeShippingThreshold.trim() === ''
+          ? null
+          : Number(form.freeShippingThreshold);
+      return storeApi.updateSettings(storeId!, body);
+    },
     onSuccess: () => {
       toast({ title: 'Settings saved', tone: 'success' });
       void qc.invalidateQueries({ queryKey: ['store', storeId, 'settings'] });
@@ -142,6 +174,47 @@ export function SettingsPage() {
         </FormField>
         <Button loading={mut.isPending} onClick={() => mut.mutate()}>
           Save settings
+        </Button>
+      </Card>
+
+      <Card elevated className="max-w-2xl space-y-3">
+        <h3 className="font-semibold">Delivery charges</h3>
+        <p className="text-sm text-ink-secondary">
+          Charged automatically at checkout based on the customer's delivery address. Leave free
+          shipping threshold blank to always charge delivery.
+        </p>
+        <FormField label="Inside Dhaka (BDT)" htmlFor="shippingInsideDhaka">
+          <Input
+            id="shippingInsideDhaka"
+            type="number"
+            min={0}
+            value={form.shippingInsideDhaka}
+            onChange={(e) => setForm((f) => ({ ...f, shippingInsideDhaka: e.target.value }))}
+          />
+        </FormField>
+        <FormField label="Outside Dhaka (BDT)" htmlFor="shippingOutsideDhaka">
+          <Input
+            id="shippingOutsideDhaka"
+            type="number"
+            min={0}
+            value={form.shippingOutsideDhaka}
+            onChange={(e) => setForm((f) => ({ ...f, shippingOutsideDhaka: e.target.value }))}
+          />
+        </FormField>
+        <FormField label="Free shipping threshold (BDT, optional)" htmlFor="freeShippingThreshold">
+          <Input
+            id="freeShippingThreshold"
+            type="number"
+            min={0}
+            value={form.freeShippingThreshold}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, freeShippingThreshold: e.target.value }))
+            }
+            placeholder="No free shipping threshold"
+          />
+        </FormField>
+        <Button loading={mut.isPending} onClick={() => mut.mutate()}>
+          Save delivery charges
         </Button>
       </Card>
 

@@ -6,6 +6,7 @@ import { Button } from '@commercenest/ui';
 import { Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { extractThemeSettings, storefrontApi } from '../lib/api';
+import { CtaLink } from '../lib/ctaLink';
 import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
 import { useCartStore } from '../stores/cartStore';
@@ -331,9 +332,9 @@ export function StoreShell() {
                 <ul className="mt-3 space-y-2 text-sm text-[var(--store-muted)]">
                   {col.links.map((link) => (
                     <li key={link.href + link.label}>
-                      <Link to={link.href} className="hover:text-[var(--store-text)]">
+                      <CtaLink href={link.href} className="hover:text-[var(--store-text)]">
                         {link.label}
-                      </Link>
+                      </CtaLink>
                     </li>
                   ))}
                 </ul>

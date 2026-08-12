@@ -2,6 +2,7 @@ import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { asyncHandler, AppError } from '../lib/errors.js';
 import { requireAuth, requireMasterAdmin } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import * as storeService from '../services/store.service.js';
 import * as analyticsService from '../services/analytics.service.js';
 import * as auditService from '../services/audit.service.js';
@@ -125,6 +126,7 @@ adminRouter.get(
 
 adminRouter.post(
   '/payments/:orderId/approve',
+  rateLimit({ windowSeconds: 60, max: 30, keyPrefix: 'rl:admin-bkash-approve' }),
   asyncHandler(async (req, res) => {
     res.json(
       await paymentService.verifyBkashPaymentByOrderId(
@@ -138,6 +140,7 @@ adminRouter.post(
 
 adminRouter.post(
   '/payments/:orderId/reject',
+  rateLimit({ windowSeconds: 60, max: 30, keyPrefix: 'rl:admin-bkash-reject' }),
   asyncHandler(async (req, res) => {
     const rejectionReason = z
       .string()
@@ -310,6 +313,7 @@ adminRouter.get(
 // --- Impersonation ---
 adminRouter.post(
   '/stores/:id/impersonate',
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:impersonate-start' }),
   asyncHandler(async (req, res) => {
     const result = await impersonationService.startImpersonation(
       param(req, 'id'),

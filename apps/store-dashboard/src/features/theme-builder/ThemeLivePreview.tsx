@@ -11,6 +11,13 @@ const widths: Record<Device, string> = {
   mobile: '390px',
 };
 
+/** `Number(value || fallback)` treats a legitimate 0 (e.g. 0% overlay) as missing. */
+function numberOrDefault(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isNaN(n) ? fallback : n;
+}
+
 type ThemeLivePreviewProps = {
   doc: ThemeDocument;
   device: Device;
@@ -47,7 +54,7 @@ function SectionBlock({
         style={{
           minHeight: s.height === 'sm' ? 220 : s.height === 'md' ? 280 : 340,
           background: imageUrl
-            ? `linear-gradient(rgba(5,8,22,${Number(s.overlay || 45) / 100}), rgba(5,8,22,${Number(s.overlay || 45) / 100})), url(${imageUrl}) center/cover`
+            ? `linear-gradient(rgba(5,8,22,${numberOrDefault(s.overlay, 45) / 100}), rgba(5,8,22,${numberOrDefault(s.overlay, 45) / 100})), url(${imageUrl}) center/cover`
             : `linear-gradient(135deg, ${colors.primary}, #0B1023)`,
         }}
       >

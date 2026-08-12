@@ -8,6 +8,7 @@ import {
   STORE_STAFF_ROLES,
 } from '../middleware/auth.js';
 import { requireStoreScope } from '../middleware/storeScope.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import * as productService from '../services/product.service.js';
 import * as categoryService from '../services/category.service.js';
 import * as orderService from '../services/order.service.js';
@@ -71,6 +72,7 @@ storeRouter.get(
 storeRouter.post(
   '/staff/invite',
   requireRoles(UserRole.STORE_OWNER, UserRole.MASTER_ADMIN),
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:staff-invite' }),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -277,6 +279,7 @@ storeRouter.get(
 storeRouter.post(
   '/coupons',
   requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:coupon-create' }),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -385,9 +388,18 @@ storeRouter.post(
   }),
 );
 
+const ORDER_READ_ROLES = [
+  UserRole.STORE_OWNER,
+  UserRole.STORE_MANAGER,
+  UserRole.ORDER_MANAGER,
+  UserRole.CUSTOMER_SUPPORT,
+  UserRole.MASTER_ADMIN,
+] as const;
+
 // Orders
 storeRouter.get(
   '/orders',
+  requireRoles(...ORDER_READ_ROLES),
   asyncHandler(async (req, res) => {
     res.json(await orderService.listOrders(scopedStoreId(req), req.query));
   }),
@@ -395,6 +407,7 @@ storeRouter.get(
 
 storeRouter.get(
   '/orders/:orderId',
+  requireRoles(...ORDER_READ_ROLES),
   asyncHandler(async (req, res) => {
     res.json(await orderService.getOrder(scopedStoreId(req), param(req, 'orderId')));
   }),
@@ -466,6 +479,7 @@ storeRouter.patch(
 // Customers
 storeRouter.get(
   '/customers',
+  requireRoles(...ORDER_READ_ROLES),
   asyncHandler(async (req, res) => {
     res.json(await customerService.listCustomers(scopedStoreId(req), req.query));
   }),
@@ -473,6 +487,7 @@ storeRouter.get(
 
 storeRouter.get(
   '/customers/:customerId',
+  requireRoles(...ORDER_READ_ROLES),
   asyncHandler(async (req, res) => {
     res.json(
       await customerService.getCustomer(
@@ -505,6 +520,7 @@ storeRouter.post(
     UserRole.ORDER_MANAGER,
     UserRole.MASTER_ADMIN,
   ),
+  rateLimit({ windowSeconds: 60, max: 30, keyPrefix: 'rl:bkash-approve' }),
   asyncHandler(async (req, res) => {
     res.json(
       await paymentService.verifyBkashPayment(
@@ -524,6 +540,7 @@ storeRouter.post(
     UserRole.ORDER_MANAGER,
     UserRole.MASTER_ADMIN,
   ),
+  rateLimit({ windowSeconds: 60, max: 30, keyPrefix: 'rl:bkash-reject' }),
   asyncHandler(async (req, res) => {
     res.json(
       await paymentService.verifyBkashPayment(
@@ -719,9 +736,16 @@ storeRouter.get(
   }),
 );
 
-// Store support tickets
+const SUPPORT_ROLES = [
+  UserRole.STORE_OWNER,
+  UserRole.STORE_MANAGER,
+  UserRole.MASTER_ADMIN,
+] as const;
+
+// Store support tickets (merchant <-> platform, distinct from end-customer support)
 storeRouter.get(
   '/support-tickets',
+  requireRoles(...SUPPORT_ROLES),
   asyncHandler(async (req, res) => {
     res.json(
       await supportService.listSupportTickets({
@@ -737,7 +761,7 @@ storeRouter.get(
 
 storeRouter.post(
   '/support-tickets',
-  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  requireRoles(...SUPPORT_ROLES),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -753,6 +777,7 @@ storeRouter.post(
 
 storeRouter.get(
   '/support-tickets/:id',
+  requireRoles(...SUPPORT_ROLES),
   asyncHandler(async (req, res) => {
     const ticket = await supportService.getSupportTicket(param(req, 'id'));
     if (ticket.storeId !== scopedStoreId(req)) {
@@ -764,6 +789,7 @@ storeRouter.get(
 
 storeRouter.post(
   '/support-tickets/:id/replies',
+  requireRoles(...SUPPORT_ROLES),
   asyncHandler(async (req, res) => {
     const ticket = await supportService.getSupportTicket(param(req, 'id'));
     if (ticket.storeId !== scopedStoreId(req)) {

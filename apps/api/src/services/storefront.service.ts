@@ -467,7 +467,7 @@ export async function checkout(storeSlug: string, input: unknown) {
           },
         },
       },
-      include: { items: true, customer: true },
+      include: { items: true, customer: { select: { riskLevel: true } } },
     });
 
     if (appliedCoupon) {

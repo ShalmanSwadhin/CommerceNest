@@ -34,7 +34,10 @@ export function MediaImageField({
   const [error, setError] = useState<string | null>(null);
 
   const mediaQ = useQuery({
-    queryKey: ['store', storeId, 'media'],
+    // Distinct from MediaPage's ['store', storeId, 'media'] key — this picker
+    // uses a capped `limit: 40` while the full Media page fetches unlimited,
+    // so sharing a cache key would let either view serve the other's params.
+    queryKey: ['store', storeId, 'media', 'picker'],
     queryFn: () => storeApi.listMedia(storeId, { limit: 40 }),
     enabled: !!storeId && mode === 'library',
   });
@@ -227,7 +230,7 @@ export function MediaImageField({
               </Button>
             </div>
           ) : (
-            <div className="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto">
+            <div className="grid max-h-48 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
               {items.map((item) => (
                 <button
                   key={item.id}
@@ -237,6 +240,8 @@ export function MediaImageField({
                   }`}
                   onClick={() => onChange(item.url)}
                   title={item.filename}
+                  aria-label={`Use ${item.filename}`}
+                  aria-pressed={value === item.url}
                 >
                   <img src={item.url} alt="" className="aspect-square w-full object-cover" />
                 </button>

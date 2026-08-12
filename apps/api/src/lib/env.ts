@@ -83,6 +83,21 @@ if (env.NODE_ENV === 'production') {
   if (!env.COOKIE_SECURE) {
     throw new Error('COOKIE_SECURE must be set to "true" when NODE_ENV=production');
   }
+  const hasCloudinaryConfig =
+    Boolean(env.CLOUDINARY_CLOUD_NAME) &&
+    Boolean(env.CLOUDINARY_API_KEY) &&
+    Boolean(env.CLOUDINARY_API_SECRET);
+  if (!hasCloudinaryConfig) {
+    // Not fatal — device uploads fall back to storing a base64 data URL
+    // directly in Postgres, which works but doesn't belong in production
+    // (no CDN, no image optimization, bloats the database). Merchants can
+    // still use the URL-registration path without Cloudinary.
+    console.warn(
+      '[env] CLOUDINARY_* is not configured in production — device media uploads will ' +
+        'fall back to storing base64 data URLs directly in the database instead of a CDN. ' +
+        'Configure CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET before merchants rely on device upload.',
+    );
+  }
 }
 
 export const corsOrigins = env.CORS_ORIGINS.split(',')

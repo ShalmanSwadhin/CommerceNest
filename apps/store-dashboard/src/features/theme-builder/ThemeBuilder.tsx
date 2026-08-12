@@ -62,6 +62,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
   const [past, setPast] = useState<ThemeDocument[]>([]);
   const [future, setFuture] = useState<ThemeDocument[]>([]);
   const skipHistory = useRef(false);
+  const initializedForStore = useRef<string | null>(null);
 
   const themeQ = useQuery({
     queryKey: ['store', storeId, 'theme'],
@@ -81,8 +82,17 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
     enabled: !!storeId && historyOpen,
   });
 
+  // Only hydrate the editor from the server once per store — not on every
+  // refetch. Save/publish invalidate this query to keep other consumers
+  // fresh, but re-running this sync on that refetch would silently discard
+  // undo/redo history and any edits made during the round-trip. Explicit
+  // "load a different draft" actions (e.g. restoring a version) set the
+  // editor state directly from their own response instead of relying on
+  // this effect.
   useEffect(() => {
-    const draft = themeQ.data?.draft;
+    if (!themeQ.data || initializedForStore.current === storeId) return;
+    initializedForStore.current = storeId;
+    const draft = themeQ.data.draft;
     const normalized = normalizeThemeDocument({
       layout: draft?.layout,
       themeSettings: draft?.themeSettings,
@@ -93,7 +103,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
     setPast([]);
     setFuture([]);
     setSelectedId(normalized.layout.sections[0]?.id ?? null);
-  }, [themeQ.data]);
+  }, [themeQ.data, storeId]);
 
   const pushHistory = (next: ThemeDocument) => {
     setDoc((prev) => {
@@ -161,10 +171,25 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
 
   const restoreMut = useMutation({
     mutationFn: (versionId: string) => storeApi.restoreTheme(storeId, versionId),
-    onSuccess: () => {
+    onSuccess: (restored) => {
       toast({ title: 'Restored to draft', tone: 'success' });
       setHistoryOpen(false);
+      // Restoring explicitly discards the current editor state in favor of
+      // the restored version — apply it directly from the response rather
+      // than waiting on a refetch (the hydrate-effect above only runs once
+      // per store, by design, so it won't pick this up on its own).
+      const normalized = normalizeThemeDocument({
+        layout: restored.layout,
+        themeSettings: restored.themeSettings,
+      });
+      skipHistory.current = true;
+      setDoc(normalized);
+      setDirty(false);
+      setPast([]);
+      setFuture([]);
+      setSelectedId(normalized.layout.sections[0]?.id ?? null);
       void qc.invalidateQueries({ queryKey: ['store', storeId, 'theme'] });
+      void qc.invalidateQueries({ queryKey: ['store', storeId, 'theme-versions'] });
     },
     onError: (err) =>
       toast({

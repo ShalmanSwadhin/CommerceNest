@@ -127,7 +127,7 @@ Target: V3+ when core platform is stable.
 | Bangladesh focus | Phone regex `01[3-9]########`, locale `bn` default |
 | Media | Cloudinary optional with stub fallback |
 | SMS | Log-only stub when provider unset |
-| Migrations | `db push` for bootstrap; expand-first for production |
+| Migrations | Committed history (`packages/prisma/migrations/`), `migrate deploy` in production; expand-first for live-data changes |
 | Brand in health | `"brand": "CommerceNest"` |
 
 ---

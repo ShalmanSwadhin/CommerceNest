@@ -194,13 +194,38 @@ Valid transitions enforced by `order-state-machine` (see unit tests).
 
 ## Migrations
 
-V1 bootstrap uses `prisma db push` when no migration history exists:
+CommerceNest has a **committed migration history** in `packages/prisma/migrations/`, starting with `20260812051559_init` (the full V1 schema — every model/enum/index described in this document, generated via `prisma migrate diff --from-empty --to-schema-datamodel`). This baseline was retroactively marked applied (`prisma migrate resolve --applied`) against the already-running dev database that had been built with `db push`, and independently verified to produce byte-identical schema when applied via `prisma migrate deploy` against a brand-new empty database (`prisma migrate diff --exit-code` reports zero drift either way). Both paths are safe to rely on.
+
+**Two commands, two very different purposes — do not mix them up:**
+
+| Command | Script | What it does | Where it belongs |
+|---------|--------|---------------|-------------------|
+| `prisma migrate dev` | `npm run db:migrate` | Applies pending migrations; if your local schema.prisma has unmigrated changes, prompts you to name and generate a new migration file under `packages/prisma/migrations/`. Tracks everything in `_prisma_migrations`. | Local development, whenever you change `schema.prisma` |
+| `prisma migrate deploy` | `packages/prisma` → `npm run migrate:deploy` | Applies any migrations not yet recorded in `_prisma_migrations`. Never generates new migrations, never prompts, never diffs against your live schema — purely replays committed SQL files in order. | CI/CD and every production/staging deploy |
+| `prisma db push` | `npm run db:push` | Force-syncs the database to match `schema.prisma` directly, computing whatever DDL is needed on the spot — **including drops**, with no migration file, no history record, and no review step. | Quick local prototyping only — **never** staging/production, and changes made this way are not captured for the next `migrate dev` until you actually run it |
+
+### Adding a new migration
 
 ```bash
-npm run db:push
+# 1. Edit packages/prisma/schema.prisma
+# 2. From repo root:
+npm run db:migrate
+# Prompts for a migration name, writes packages/prisma/migrations/<timestamp>_<name>/migration.sql,
+# applies it to your local DATABASE_URL, and regenerates the Prisma client.
+# 3. Commit the new migrations/<timestamp>_<name>/ folder.
 ```
 
-For production, adopt **expand-first** migrations:
+### Production deploy
+
+```bash
+cd packages/prisma && npx prisma migrate deploy
+```
+
+Run this as a deploy-time step (before the API container starts serving traffic), on every deploy — it's a no-op when there's nothing new to apply. See [DEPLOYMENT.md](./DEPLOYMENT.md) for the exact Docker Compose invocation.
+
+### Expand-first for live tenants
+
+For any change that touches an existing column/table with production data, adopt **expand-first** migrations rather than a single destructive change:
 
 1. Add nullable columns / new tables
 2. Deploy code that reads both old and new
@@ -208,7 +233,7 @@ For production, adopt **expand-first** migrations:
 4. Deploy code that writes new only
 5. Remove old columns in a later migration
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md).
+`prisma migrate dev` will refuse (or warn loudly) if a generated migration looks destructive against data it can inspect locally — read the CLI output before applying, and never `prisma migrate reset` against a database that holds real data (it drops and recreates the schema from scratch).
 
 ---
 
@@ -295,6 +320,8 @@ docker compose up -d api
 ```
 
 Restoring into a *new* database name first (rather than `pg_restore --clean` in place) means a bad restore never destroys the last-known-good data — you can always rename back.
+
+**Migration state travels with the dump.** `pg_dump`/`pg_restore` capture the whole database, including Prisma's `_prisma_migrations` bookkeeping table, so a restored database is automatically consistent with whatever migration history had been applied at backup time — `prisma migrate status` against it will correctly report "up to date" (or list exactly the migrations applied since, if you're restoring an older backup and then need to catch up with `prisma migrate deploy`). You never need to manually reconcile migration state after a restore.
 
 ### 3. What backups do **not** cover
 

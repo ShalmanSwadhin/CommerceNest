@@ -16,6 +16,26 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+/**
+ * Never `findMany`/`findFirst` a bare Customer — the model carries
+ * `passwordHash` (customer OTP-account credential), which store staff have
+ * no business seeing. Every store-dashboard-facing query must go through
+ * this whitelist.
+ */
+export const CUSTOMER_SAFE_SELECT = {
+  id: true,
+  storeId: true,
+  phone: true,
+  name: true,
+  email: true,
+  riskLevel: true,
+  totalOrders: true,
+  deliveredOrders: true,
+  refusedOrders: true,
+  preferredLocale: true,
+  createdAt: true,
+} satisfies Prisma.CustomerSelect;
+
 export async function listCustomers(storeId: string, query: unknown) {
   const q = listQuerySchema.parse(query);
   const where: Prisma.CustomerWhereInput = { storeId };
@@ -31,6 +51,7 @@ export async function listCustomers(storeId: string, query: unknown) {
   const [items, total] = await Promise.all([
     prisma.customer.findMany({
       where,
+      select: CUSTOMER_SAFE_SELECT,
       orderBy: { createdAt: 'desc' },
       skip: (q.page - 1) * q.limit,
       take: q.limit,
@@ -44,7 +65,8 @@ export async function listCustomers(storeId: string, query: unknown) {
 export async function getCustomer(storeId: string, customerId: string) {
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, storeId },
-    include: {
+    select: {
+      ...CUSTOMER_SAFE_SELECT,
       addresses: true,
       orders: {
         orderBy: { createdAt: 'desc' },

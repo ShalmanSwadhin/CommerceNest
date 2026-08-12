@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, FormField, Input, Textarea, useToast } from '@commercenest/ui';
 import { ApiClientError, storeApi, type CmsBlock } from '../lib/api';
@@ -10,6 +10,7 @@ export function CmsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [blocks, setBlocks] = useState<CmsBlock[]>([]);
+  const initializedForStore = useRef<string | null>(null);
 
   const q = useQuery({
     queryKey: ['store', storeId, 'cms'],
@@ -17,8 +18,12 @@ export function CmsPage() {
     enabled: !!storeId,
   });
 
+  // Hydrate the form once per store, not on every refetch — otherwise the
+  // refetch triggered by our own Save (via invalidateQueries below) would
+  // race the in-flight edit and silently overwrite it with the server echo.
   useEffect(() => {
-    if (!q.data) return;
+    if (!q.data || !storeId || initializedForStore.current === storeId) return;
+    initializedForStore.current = storeId;
     const raw = Array.isArray(q.data)
       ? q.data
       : q.data.items ?? q.data.data ?? [];
@@ -39,7 +44,7 @@ export function CmsPage() {
         };
       }),
     );
-  }, [q.data]);
+  }, [q.data, storeId]);
 
   const mut = useMutation({
     mutationFn: () => storeApi.saveCms(storeId!, blocks),

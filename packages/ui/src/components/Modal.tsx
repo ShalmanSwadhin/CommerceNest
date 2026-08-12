@@ -110,7 +110,7 @@ export function Modal({
         aria-labelledby={title ? 'modal-title' : undefined}
         aria-describedby={description ? 'modal-description' : undefined}
         className={cn(
-          'relative z-10 w-full rounded-[var(--cn-radius-lg)]',
+          'relative z-10 flex max-h-[85vh] w-full flex-col rounded-[var(--cn-radius-lg)]',
           'bg-[var(--cn-color-surface-overlay)] shadow-[var(--cn-shadow-4)]',
           'border border-[var(--cn-color-border-default)]',
           'transition-opacity duration-[var(--cn-duration-normal)]',
@@ -119,7 +119,7 @@ export function Modal({
         )}
       >
         {(title || description) && (
-          <div className="flex items-start justify-between gap-4 p-6 pb-0">
+          <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-0">
             <div className="flex flex-col gap-1.5">
               {title && (
                 <h2
@@ -143,11 +143,11 @@ export function Modal({
             </IconButton>
           </div>
         )}
-        <div className="p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
         {footer && (
           <div
             className={cn(
-              'flex items-center justify-end gap-3 px-6 py-4',
+              'flex shrink-0 items-center justify-end gap-3 px-6 py-4',
               'border-t border-[var(--cn-color-border-default)]',
             )}
           >

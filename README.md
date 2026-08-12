@@ -46,11 +46,11 @@ This starts Postgres on `5432` and Redis on `6379` with default credentials matc
 
 ```bash
 npm run db:generate
-npm run db:push          # or: npm run db:migrate
+npm run db:migrate       # applies the committed migration history (packages/prisma/migrations/)
 npm run db:seed
 ```
 
-`db:push` applies the Prisma schema directly (no migration history yet). Use `db:migrate` once migration files are added.
+`db:migrate` runs `prisma migrate dev`, which applies any migrations not yet on your local database and prompts to create a new one if your schema edits aren't captured yet. Use `npm run db:push` only for quick, throwaway schema experiments you don't intend to commit — it never touches `packages/prisma/migrations/` and must not be used against staging/production (see [DATABASE.md](./DATABASE.md#migrations)).
 
 ### 5. Run locally
 

@@ -143,7 +143,11 @@ Copy `.env.example` to `.env` at the repository root. The API loads env via `dot
 
 ## Media (Cloudinary)
 
-Optional in local development. Without credentials, media signed-URL endpoints return stub responses and uploads fail gracefully.
+**Required for production device uploads.** Optional in local development: without all three of `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` set, `getSignedUploadUrl` returns a `mode: 'stub'` response instead of a real Cloudinary signed upload, and the three theme-builder/media-picker upload components (`MediaImageField.tsx` in both `apps/admin-panel` and `apps/store-dashboard`) fall back to reading the file as a base64 `data:` URL client-side and storing that directly via `registerMediaAsset` — no external request is made, so uploads still work, but the "file" is now a large text blob living in the `media_assets.url` Postgres column instead of a CDN-hosted asset. That's fine for local dev, **not fine for production** (bloats the database, no image optimization, no CDN caching) — `apps/api/src/lib/env.ts` logs a startup warning (not a hard failure) when `NODE_ENV=production` and Cloudinary isn't fully configured, precisely so this doesn't go unnoticed.
+
+The URL-paste "advanced" option in the media picker doesn't depend on Cloudinary either way — it just registers whatever URL the merchant supplies, validated server-side to be `http(s)://` or `data:image/...` only (rejects `javascript:`/`file:`/etc. schemes).
+
+Server-side validation applied regardless of upload path (`apps/api/src/services/media.service.ts`): `mimeType` must be one of `image/png`, `image/jpeg`, `image/webp`, `image/svg+xml`, `image/gif`; `bytes` capped at 10MB. These are metadata/sanity checks, not a substitute for Cloudinary's own transfer-size enforcement on the real upload path.
 
 ### `CLOUDINARY_URL`
 

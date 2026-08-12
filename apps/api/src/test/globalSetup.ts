@@ -89,7 +89,9 @@ export async function setup() {
     process.env.DATABASE_URL = databaseUrl;
     process.env.CN_TEST_EMBEDDED_PG = '1';
 
-    execSync('npx prisma db push --skip-generate --accept-data-loss', {
+    // migrate deploy (not db push) so every test run also validates that the
+    // committed migration history actually produces a working schema.
+    execSync('npx prisma migrate deploy', {
       cwd: path.join(root, 'packages/prisma'),
       env: { ...process.env, DATABASE_URL: databaseUrl },
       stdio: 'inherit',

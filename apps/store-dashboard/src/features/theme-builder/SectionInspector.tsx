@@ -10,6 +10,16 @@ import { MediaImageField } from './MediaImageField';
 
 type InspectorTab = 'section' | 'branding' | 'colors' | 'typography' | 'header' | 'footer';
 
+/**
+ * `Number(value || fallback)` treats a legitimate 0 as missing — used
+ * anywhere 0 is a real, reachable value (e.g. a 0% overlay slider).
+ */
+function numberOrDefault(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isNaN(n) ? fallback : n;
+}
+
 type SectionInspectorProps = {
   storeId: string;
   tab: InspectorTab;
@@ -202,12 +212,12 @@ export function SectionInspector({
                   usageType="STORE_BANNER"
                   onChange={(url) => patchSectionSetting('imageUrl', url)}
                 />
-                <FormField label={`Overlay ${Number(section.settings.overlay || 45)}%`}>
+                <FormField label={`Overlay ${numberOrDefault(section.settings.overlay, 45)}%`}>
                   <input
                     type="range"
                     min={0}
                     max={80}
-                    value={Number(section.settings.overlay || 45)}
+                    value={numberOrDefault(section.settings.overlay, 45)}
                     onChange={(e) =>
                       patchSectionSetting('overlay', Number(e.target.value))
                     }

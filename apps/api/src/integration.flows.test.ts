@@ -3,6 +3,23 @@ import request from 'supertest';
 import { createApp } from './app.js';
 import { hasDatabase } from './test/setup.js';
 import { initRedis } from './lib/redis.js';
+import { prisma } from './lib/prisma.js';
+import { hashPassword } from './lib/password.js';
+
+/** Recursively checks a JSON value never contains a `passwordHash` key. */
+function assertNoPasswordHash(value: unknown, path = '$'): void {
+  if (value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => assertNoPasswordHash(v, `${path}[${i}]`));
+    return;
+  }
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'passwordHash') {
+      throw new Error(`Found leaked passwordHash at ${path}.${key}`);
+    }
+    assertNoPasswordHash(v, `${path}.${key}`);
+  }
+}
 
 const app = createApp();
 
@@ -146,6 +163,98 @@ describe.skipIf(!hasDatabase)('CommerceNest integration flows', () => {
       .get(`/api/store/${storeAId}/orders`)
       .set('Authorization', 'Bearer not-a-real-token');
     expect(badToken.status).toBe(401);
+  });
+
+  it('customer passwordHash is never returned in store-dashboard API responses', async () => {
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    expect(login.status).toBe(200);
+    const token = login.body.accessToken as string;
+    const storeId = login.body.user.storeId as string;
+
+    const list = await request(app)
+      .get(`/api/store/${storeId}/customers`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(list.status).toBe(200);
+    assertNoPasswordHash(list.body);
+
+    const firstCustomerId = (list.body.items ?? list.body)[0]?.id as
+      | string
+      | undefined;
+    if (firstCustomerId) {
+      const detail = await request(app)
+        .get(`/api/store/${storeId}/customers/${firstCustomerId}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(detail.status).toBe(200);
+      assertNoPasswordHash(detail.body);
+    }
+
+    const orders = await request(app)
+      .get(`/api/store/${storeId}/orders`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(orders.status).toBe(200);
+    assertNoPasswordHash(orders.body);
+
+    const firstOrderId = (orders.body.items ?? orders.body)[0]?.id as
+      | string
+      | undefined;
+    if (firstOrderId) {
+      const orderDetail = await request(app)
+        .get(`/api/store/${storeId}/orders/${firstOrderId}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(orderDetail.status).toBe(200);
+      assertNoPasswordHash(orderDetail.body);
+    }
+  });
+
+  it('INVENTORY_MANAGER cannot read orders, customers, or support tickets (least-privilege RBAC)', async () => {
+    const ownerLogin = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    const storeId = ownerLogin.body.user.storeId as string;
+
+    const email = `inventory-rbac-test-${Date.now()}@techworld.bd`;
+    await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await hashPassword('Inventory123!'),
+        name: 'Inventory Test',
+        role: 'INVENTORY_MANAGER',
+        storeId,
+        status: 'ACTIVE',
+      },
+    });
+
+    const login = await request(app).post('/api/auth/login').send({
+      email,
+      password: 'Inventory123!',
+    });
+    expect(login.status).toBe(200);
+    const token = login.body.accessToken as string;
+
+    const blocked: Array<[string, string]> = [
+      ['GET', '/orders'],
+      ['GET', '/customers'],
+      ['GET', '/support-tickets'],
+    ];
+    for (const [method, path] of blocked) {
+      const r = await request(app)
+        [method.toLowerCase() as 'get'](`/api/store/${storeId}${path}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(
+        r.status,
+        `INVENTORY_MANAGER should be blocked from ${method} ${path}, got ${r.status}`,
+      ).toBe(403);
+    }
+
+    // Sanity check: inventory manager's actual domain (products) still works.
+    const products = await request(app)
+      .get(`/api/store/${storeId}/products`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(products.status).toBe(200);
   });
 
   it('storefront home uses published theme only + lists products', async () => {

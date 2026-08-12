@@ -4,6 +4,25 @@ import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { env, hasCloudinary } from '../lib/env.js';
 
+/**
+ * This system is for images only — anything else (HTML, scripts, archives)
+ * has no legitimate use here and only expands attack surface (e.g. a
+ * mislabeled upload later served/opened with an unexpected content-type).
+ */
+const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/svg+xml',
+  'image/gif',
+] as const;
+
+/** Generous ceiling above the 2.5MB client-side suggestion — this is
+ * metadata bookkeeping (Cloudinary/the browser enforce the real transfer
+ * limit), not a substitute for it, but it keeps obviously-bogus values out
+ * of the database. */
+const MAX_MEDIA_BYTES = 10_000_000;
+
 const listQuerySchema = z.object({
   usageType: z
     .enum([
@@ -51,7 +70,7 @@ export async function deleteMedia(storeId: string, mediaId: string) {
 const signedUploadSchema = z
   .object({
     filename: z.string().trim().min(1).max(300),
-    mimeType: z.string().trim().min(1).max(100),
+    mimeType: z.enum(ALLOWED_IMAGE_MIME_TYPES),
     usageType: z.string().trim().max(40).optional(),
   })
   .strict();
@@ -100,13 +119,30 @@ export async function getSignedUploadUrl(storeId: string, rawInput: unknown) {
   };
 }
 
+/**
+ * Only `https:`/`http:` (real hosted images) or `data:image/...` (the
+ * dev-stub fallback) are legitimate here. Rejects `javascript:`, `vbscript:`,
+ * `file:`, etc. up front — defense in depth even though browsers already
+ * refuse to execute those as an `<img src>`, since this URL can end up in
+ * other contexts (CSV/export, admin tooling, a future "open original" link).
+ */
+const mediaUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2_000_000) // data: URLs (dev stub fallback) can be large
+  .refine(
+    (url) => /^https?:\/\//i.test(url) || /^data:image\//i.test(url),
+    { message: 'Media URL must be an http(s) URL or a data:image/... URL' },
+  );
+
 const registerMediaSchema = z
   .object({
     publicId: z.string().trim().min(1).max(300),
-    url: z.string().trim().min(1).max(2000),
+    url: mediaUrlSchema,
     filename: z.string().trim().min(1).max(300),
-    mimeType: z.string().trim().min(1).max(100),
-    bytes: z.number().int().nonnegative(),
+    mimeType: z.enum(ALLOWED_IMAGE_MIME_TYPES),
+    bytes: z.number().int().nonnegative().max(MAX_MEDIA_BYTES),
     usageType: z
       .enum([
         'PRODUCT_IMAGE',

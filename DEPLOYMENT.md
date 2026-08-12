@@ -85,17 +85,15 @@ Services in `docker-compose.yml`:
 
 ### 3. Run migrations
 
-First deploy (schema bootstrap):
+CommerceNest ships a committed migration history (`packages/prisma/migrations/`). **Production and staging must always use `prisma migrate deploy`** — never `db push`. `db push` diffs the live schema and can silently generate a destructive plan (dropped columns/tables) with no review step and no migration record; it exists only for local prototyping (see [DATABASE.md](./DATABASE.md#migrations)).
 
-```bash
-docker compose exec api sh -c "cd /app && npx prisma db push --schema=packages/prisma/schema.prisma"
-```
-
-Or with migration history:
+First deploy and every subsequent deploy:
 
 ```bash
 docker compose exec api sh -c "cd /app/packages/prisma && npx prisma migrate deploy"
 ```
+
+This is idempotent — safe to run on every deploy, including ones with no new migrations (it's a no-op if the database is already up to date). Wire it into your deploy script/CI job so it always runs before the API container starts serving traffic.
 
 Seed (optional, non-production only):
 

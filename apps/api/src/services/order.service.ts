@@ -12,6 +12,7 @@ import {
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
+import { CUSTOMER_SAFE_SELECT } from './customer.service.js';
 import { recalculateRisk } from './customer-risk.service.js';
 
 /** Order status state machine */
@@ -83,7 +84,7 @@ export async function getOrder(storeId: string, orderId: string) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, storeId },
     include: {
-      customer: true,
+      customer: { select: CUSTOMER_SAFE_SELECT },
       items: true,
       statusHistory: { orderBy: { createdAt: 'asc' } },
       paymentVerifiedBy: {
@@ -199,7 +200,7 @@ export async function transitionOrderStatus(
             }
           : {}),
       },
-      include: { items: true, customer: true },
+      include: { items: true, customer: { select: CUSTOMER_SAFE_SELECT } },
     });
 
     await tx.orderStatusHistory.create({
