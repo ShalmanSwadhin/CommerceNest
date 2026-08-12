@@ -9,9 +9,11 @@ import {
   Megaphone,
   Package,
   Palette,
+  RotateCcw,
   Settings,
   ShoppingCart,
   Tags,
+  Ticket,
   Users,
 } from 'lucide-react';
 import { cn } from '@commercenest/ui';
@@ -23,6 +25,8 @@ const nav: Array<{ to: string; label: string; icon: typeof LayoutDashboard; key:
   { to: '/orders', label: 'Orders', icon: ShoppingCart, key: 'orders' },
   { to: '/products', label: 'Products', icon: Package, key: 'products' },
   { to: '/categories', label: 'Categories', icon: Tags, key: 'categories' },
+  { to: '/coupons', label: 'Coupons', icon: Ticket, key: 'coupons' },
+  { to: '/returns', label: 'Returns', icon: RotateCcw, key: 'returns' },
   { to: '/customers', label: 'Customers', icon: Users, key: 'customers' },
   { to: '/payments', label: 'Payments', icon: CreditCard, key: 'payments' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, key: 'analytics' },

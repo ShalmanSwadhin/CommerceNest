@@ -153,6 +153,9 @@ async function main() {
     for (const [path, label] of [
       ['/orders', 'orders'],
       ['/products', 'products'],
+      ['/categories', 'categories'],
+      ['/coupons', 'coupons'],
+      ['/returns', 'returns'],
       ['/customers', 'customers'],
       ['/payments', 'payments'],
       ['/analytics', 'analytics'],

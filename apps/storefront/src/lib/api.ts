@@ -205,6 +205,9 @@ export interface CheckoutResult {
   orderId: string;
   orderNumber?: string;
   total?: number | string;
+  subtotal?: number | string;
+  deliveryCharge?: number | string;
+  discountAmount?: number | string;
   paymentMethod?: string;
   paymentStatus?: string;
   /** Legacy nested shape (tolerated if present). */
@@ -236,6 +239,15 @@ export interface AccountOrder {
   paymentStatus?: string;
   total?: number | string;
   createdAt?: string;
+}
+
+export interface ReturnRequestRow {
+  id: string;
+  orderId: string;
+  reason: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'ITEM_RECEIVED' | 'REFUNDED';
+  requestedAt: string;
+  order?: { orderNumber?: string; total?: number | string };
 }
 
 export function extractThemeSettings(
@@ -364,4 +376,11 @@ export const storefrontApi = {
     apiRequest<Paginated<AccountOrder> | AccountOrder[]>(
       sf(slug, '/account/orders'),
     ),
+  accountReturns: (slug: string) =>
+    apiRequest<{ items: ReturnRequestRow[] }>(sf(slug, '/account/returns')),
+  requestReturn: (slug: string, orderId: string, reason: string) =>
+    apiRequest<ReturnRequestRow>(sf(slug, '/account/returns'), {
+      method: 'POST',
+      body: JSON.stringify({ orderId, reason }),
+    }),
 };

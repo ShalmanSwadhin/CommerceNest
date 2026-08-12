@@ -25,7 +25,7 @@ export function LoginPage() {
         setError('This account is not linked to a store.');
         return;
       }
-      setSession(res.accessToken, res.user);
+      setSession(res.accessToken, res.user, res.refreshToken ?? null);
       navigate('/');
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Login failed');

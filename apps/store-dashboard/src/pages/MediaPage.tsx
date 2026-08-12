@@ -96,7 +96,29 @@ export function MediaPage() {
   );
 
   const registerUrlMut = useMutation({
-    mutationFn: () => storeApi.uploadMediaStub(storeId!, { url, usageType: 'OTHER' }),
+    mutationFn: () => {
+      const trimmed = url.trim();
+      const filename = trimmed.split('/').pop()?.split('?')[0] || 'image';
+      const ext = filename.split('.').pop()?.toLowerCase();
+      const mimeType =
+        ext === 'png'
+          ? 'image/png'
+          : ext === 'webp'
+            ? 'image/webp'
+            : ext === 'svg'
+              ? 'image/svg+xml'
+              : ext === 'gif'
+                ? 'image/gif'
+                : 'image/jpeg';
+      return storeApi.registerMedia(storeId!, {
+        publicId: `url-${Date.now()}`,
+        url: trimmed,
+        filename,
+        mimeType,
+        bytes: 0,
+        usageType: 'OTHER',
+      });
+    },
     onSuccess: () => {
       toast({ title: 'Media registered', tone: 'success' });
       setUrl('');

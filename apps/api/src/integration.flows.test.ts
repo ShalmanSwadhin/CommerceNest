@@ -58,6 +58,96 @@ describe.skipIf(!hasDatabase)('CommerceNest integration flows', () => {
     expect(res.body.error.code).toBe('TENANT_MISMATCH');
   });
 
+  it('store A is blocked from every store-scoped resource type on store B (tenant isolation)', async () => {
+    const loginA = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    const loginB = await request(app).post('/api/auth/login').send({
+      email: 'owner@rahimmobile.bd',
+      password: 'Owner123!',
+    });
+    expect(loginA.status).toBe(200);
+    expect(loginB.status).toBe(200);
+
+    const tokenA = loginA.body.accessToken as string;
+    const storeBId = loginB.body.user.storeId as string;
+
+    const reads: Array<[string, string]> = [
+      ['GET', '/orders'],
+      ['GET', '/customers'],
+      ['GET', '/media'],
+      ['GET', '/cms'],
+      ['GET', '/theme/current'],
+      ['GET', '/staff'],
+      ['GET', '/settings/business'],
+      ['GET', '/analytics/summary'],
+      ['GET', '/coupons'],
+      ['GET', '/returns'],
+      ['GET', '/categories'],
+      ['GET', '/onboarding-checklist'],
+    ];
+    for (const [method, path] of reads) {
+      const r = await request(app)
+        [method.toLowerCase() as 'get'](`/api/store/${storeBId}${path}`)
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(
+        r.status,
+        `${method} ${path} should be blocked cross-store, got ${r.status}: ${JSON.stringify(r.body)}`,
+      ).toBe(403);
+      expect(r.body.error.code).toBe('TENANT_MISMATCH');
+    }
+
+    const writes: Array<[string, string, Record<string, unknown>]> = [
+      ['POST', '/products', { name: 'x', slug: 'x', basePrice: 1, variants: [{ sku: 'x' }] }],
+      ['POST', '/categories', { name: 'x', slug: 'x' }],
+      ['POST', '/coupons', { code: 'HACK10', discountType: 'PERCENTAGE', discountValue: 10 }],
+      ['PATCH', '/settings/business', { name: 'Hacked name' }],
+      ['PUT', '/theme/draft', { layout: {}, themeSettings: {} }],
+      ['POST', '/theme/publish', {}],
+    ];
+    for (const [method, path, body] of writes) {
+      const r = await request(app)
+        [method.toLowerCase() as 'post'](`/api/store/${storeBId}${path}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send(body);
+      expect(
+        r.status,
+        `${method} ${path} should be blocked cross-store, got ${r.status}: ${JSON.stringify(r.body)}`,
+      ).toBe(403);
+      expect(r.body.error.code).toBe('TENANT_MISMATCH');
+    }
+  });
+
+  it('unauthenticated and cross-role requests are rejected on protected APIs', async () => {
+    const loginA = await request(app).post('/api/auth/login').send({
+      email: 'owner@techworld.bd',
+      password: 'Owner123!',
+    });
+    const storeAId = loginA.body.user.storeId as string;
+
+    // Unauthenticated -> store admin API
+    const noAuth = await request(app).get(`/api/store/${storeAId}/orders`);
+    expect(noAuth.status).toBe(401);
+
+    // Unauthenticated -> master admin API
+    const noAuthAdmin = await request(app).get('/api/admin/stores');
+    expect(noAuthAdmin.status).toBe(401);
+
+    // Store staff -> master admin API
+    const tokenA = loginA.body.accessToken as string;
+    const staffToAdmin = await request(app)
+      .get('/api/admin/stores')
+      .set('Authorization', `Bearer ${tokenA}`);
+    expect([401, 403]).toContain(staffToAdmin.status);
+
+    // Garbage bearer token -> protected API
+    const badToken = await request(app)
+      .get(`/api/store/${storeAId}/orders`)
+      .set('Authorization', 'Bearer not-a-real-token');
+    expect(badToken.status).toBe(401);
+  });
+
   it('storefront home uses published theme only + lists products', async () => {
     const home = await request(app).get('/api/storefront/techworld-bd/home');
     expect(home.status).toBe(200);

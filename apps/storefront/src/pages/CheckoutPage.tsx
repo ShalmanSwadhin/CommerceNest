@@ -48,6 +48,7 @@ export function CheckoutPage() {
     bkashTxnId: '',
     bkashSenderPhone: '',
     customerNote: '',
+    couponCode: '',
   });
 
   const storeQ = useQuery({
@@ -58,11 +59,22 @@ export function CheckoutPage() {
   const store = storeQ.data?.store;
   const total = useMemo(() => cartTotal(items), [items]);
 
-  const finish = (orderNumber?: string, orderId?: string) => {
+  const finish = (
+    orderNumber?: string,
+    orderId?: string,
+    breakdown?: { subtotal?: number; deliveryCharge?: number; discountAmount?: number; total?: number },
+  ) => {
     clear();
-    navigate(
-      `/order-success?order=${encodeURIComponent(orderNumber || orderId || '')}`,
-    );
+    const params = new URLSearchParams({ order: orderNumber || orderId || '' });
+    if (breakdown) {
+      if (breakdown.subtotal !== undefined) params.set('subtotal', String(breakdown.subtotal));
+      if (breakdown.deliveryCharge !== undefined)
+        params.set('delivery', String(breakdown.deliveryCharge));
+      if (breakdown.discountAmount !== undefined)
+        params.set('discount', String(breakdown.discountAmount));
+      if (breakdown.total !== undefined) params.set('total', String(breakdown.total));
+    }
+    navigate(`/order-success?${params.toString()}`);
   };
 
   const mut = useMutation({
@@ -92,6 +104,7 @@ export function CheckoutPage() {
         },
         paymentMethod: form.paymentMethod,
         customerNote: form.customerNote || undefined,
+        couponCode: form.couponCode.trim() || undefined,
         ...(includeTxn
           ? {
               bkashTxnId: form.bkashTxnId,
@@ -116,7 +129,14 @@ export function CheckoutPage() {
         setStep('bkash');
         return;
       }
-      finish(orderNumber, orderId);
+      finish(orderNumber, orderId, {
+        subtotal: res.subtotal !== undefined ? Number(res.subtotal) : undefined,
+        deliveryCharge:
+          res.deliveryCharge !== undefined ? Number(res.deliveryCharge) : undefined,
+        discountAmount:
+          res.discountAmount !== undefined ? Number(res.discountAmount) : undefined,
+        total: res.total !== undefined ? Number(res.total) : undefined,
+      });
     },
     onError: (err) => {
       setError(err instanceof ApiClientError ? err.message : 'Checkout failed');
@@ -265,10 +285,22 @@ export function CheckoutPage() {
               </div>
             ))}
           </div>
+          <FormField label="Coupon code (optional)" htmlFor="couponCode">
+            <Input
+              id="couponCode"
+              value={form.couponCode}
+              onChange={(e) => set('couponCode', e.target.value.toUpperCase())}
+              placeholder="e.g. EID20"
+            />
+          </FormField>
           <div className="flex justify-between border-t border-line pt-3 font-semibold">
-            <span>Total</span>
+            <span>Items subtotal</span>
             <span>{formatBdt(total)}</span>
           </div>
+          <p className="text-xs text-ink-secondary">
+            Delivery charge and any coupon discount are calculated after you place the order,
+            based on your delivery address. You'll see the final total on the confirmation page.
+          </p>
           <div className="text-sm text-ink-secondary">
             {form.paymentMethod === 'MANUAL_BKASH'
               ? form.bkashTxnId

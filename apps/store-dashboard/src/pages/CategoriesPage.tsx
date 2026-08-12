@@ -36,6 +36,24 @@ export function CategoriesPage() {
   });
   const rows = useMemo(() => q.data ?? [], [q.data]);
 
+  const excludedParentIds = useMemo(() => {
+    if (!editing) return new Set<string>();
+    // A category can't become its own descendant's child — walk the tree
+    // from the category being edited and exclude the whole subtree.
+    const ids = new Set<string>([editing.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const r of rows) {
+        if (r.parentId && ids.has(r.parentId) && !ids.has(r.id)) {
+          ids.add(r.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  }, [editing, rows]);
+
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['store', storeId, 'categories'] });
 
   const saveMut = useMutation({
@@ -216,7 +234,7 @@ export function CategoriesPage() {
             >
               <option value="">None</option>
               {rows
-                .filter((r) => r.id !== editing?.id)
+                .filter((r) => !excludedParentIds.has(r.id))
                 .map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}

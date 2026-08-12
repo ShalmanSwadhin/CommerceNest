@@ -128,7 +128,12 @@ export function PaymentsPage() {
             <Button variant="secondary" onClick={() => setRejectTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" loading={rejectMut.isPending} onClick={() => rejectMut.mutate()}>
+            <Button
+              variant="destructive"
+              loading={rejectMut.isPending}
+              disabled={!reason.trim()}
+              onClick={() => rejectMut.mutate()}
+            >
               Reject
             </Button>
           </>

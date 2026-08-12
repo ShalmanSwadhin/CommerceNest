@@ -6,11 +6,14 @@ import { ApiClientError, configureApiAuth, storeApi } from './lib/api';
 import { useAuthStore } from './stores/authStore';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
+import { canAccess, type NavKey } from './lib/rbac';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { CouponsPage } from './pages/CouponsPage';
+import { ReturnsPage } from './pages/ReturnsPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
@@ -125,6 +128,14 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequirePermission({ perm, children }: { perm: NavKey; children: React.ReactNode }) {
+  const role = useAuthStore((s) => s.user?.role);
+  if (!canAccess(role, perm)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -136,18 +147,104 @@ export default function App() {
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
                   <Route index element={<DashboardPage />} />
-                  <Route path="orders" element={<OrdersPage />} />
-                  <Route path="products" element={<ProductsPage />} />
-                  <Route path="categories" element={<CategoriesPage />} />
-                  <Route path="customers" element={<CustomersPage />} />
-                  <Route path="payments" element={<PaymentsPage />} />
-                  <Route path="analytics" element={<AnalyticsPage />} />
-                  <Route path="cms" element={<CmsPage />} />
-                  <Route path="media" element={<MediaPage />} />
+                  <Route
+                    path="orders"
+                    element={
+                      <RequirePermission perm="orders">
+                        <OrdersPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="products"
+                    element={
+                      <RequirePermission perm="products">
+                        <ProductsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="categories"
+                    element={
+                      <RequirePermission perm="categories">
+                        <CategoriesPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="coupons"
+                    element={
+                      <RequirePermission perm="coupons">
+                        <CouponsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="returns"
+                    element={
+                      <RequirePermission perm="returns">
+                        <ReturnsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="customers"
+                    element={
+                      <RequirePermission perm="customers">
+                        <CustomersPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="payments"
+                    element={
+                      <RequirePermission perm="payments">
+                        <PaymentsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="analytics"
+                    element={
+                      <RequirePermission perm="analytics">
+                        <AnalyticsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="cms"
+                    element={
+                      <RequirePermission perm="cms">
+                        <CmsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="media"
+                    element={
+                      <RequirePermission perm="media">
+                        <MediaPage />
+                      </RequirePermission>
+                    }
+                  />
                   <Route path="theme" element={<ThemePage />} />
                   <Route path="announcements" element={<AnnouncementsPage />} />
-                  <Route path="support" element={<SupportPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
+                  <Route
+                    path="support"
+                    element={
+                      <RequirePermission perm="support">
+                        <SupportPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="settings"
+                    element={
+                      <RequirePermission perm="settings">
+                        <SettingsPage />
+                      </RequirePermission>
+                    }
+                  />
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

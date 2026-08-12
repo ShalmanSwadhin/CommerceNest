@@ -538,6 +538,7 @@ storeRouter.post(
 // Analytics
 storeRouter.get(
   '/analytics/summary',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     res.json(await analyticsService.getStoreSummary(scopedStoreId(req)));
   }),
@@ -589,6 +590,7 @@ storeRouter.delete(
 // Settings
 storeRouter.get(
   '/settings/business',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     const store = await storeService.getStore(scopedStoreId(req));
     res.json({

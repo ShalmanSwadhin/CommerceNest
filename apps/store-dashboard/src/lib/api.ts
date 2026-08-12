@@ -288,6 +288,38 @@ export interface CategoryRow {
   children?: CategoryRow[];
 }
 
+export interface CouponRow {
+  id: string;
+  code: string;
+  discountType: 'PERCENTAGE' | 'FIXED';
+  discountValue: string | number;
+  minOrderValue?: string | number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  active: boolean;
+  usageLimit?: number | null;
+  perCustomerLimit?: number | null;
+  usedCount: number;
+  createdAt: string;
+}
+
+export interface ReturnRow {
+  id: string;
+  storeId: string;
+  orderId: string;
+  customerId: string;
+  reason: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'ITEM_RECEIVED' | 'REFUNDED';
+  staffNote?: string | null;
+  refundAmount?: string | number | null;
+  refundMethod?: string | null;
+  requestedAt: string;
+  resolvedAt?: string | null;
+  refundedAt?: string | null;
+  order?: { orderNumber: string; total: string | number };
+  customer?: { id: string; name: string; phone: string };
+}
+
 export interface ThemeVersion {
   id: string;
   status?: string;
@@ -428,6 +460,51 @@ export const storeApi = {
   deleteCategory: (storeId: string, id: string) =>
     apiRequest<{ ok: boolean }>(storePath(storeId, `/categories/${id}`), {
       method: 'DELETE',
+    }),
+  listCoupons: (
+    storeId: string,
+    params: Record<string, string | number | boolean | undefined | null> = {},
+  ) => apiRequest<Paginated<CouponRow>>(storePath(storeId, `/coupons${toQuery(params)}`)),
+  createCoupon: (storeId: string, body: Record<string, unknown>) =>
+    apiRequest<CouponRow>(storePath(storeId, '/coupons'), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateCoupon: (storeId: string, id: string, body: Record<string, unknown>) =>
+    apiRequest<CouponRow>(storePath(storeId, `/coupons/${id}`), {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteCoupon: (storeId: string, id: string) =>
+    apiRequest<{ ok: boolean } | CouponRow>(storePath(storeId, `/coupons/${id}`), {
+      method: 'DELETE',
+    }),
+  listReturns: (
+    storeId: string,
+    params: Record<string, string | number | boolean | undefined | null> = {},
+  ) => apiRequest<Paginated<ReturnRow>>(storePath(storeId, `/returns${toQuery(params)}`)),
+  approveReturn: (storeId: string, id: string, staffNote?: string) =>
+    apiRequest<ReturnRow>(storePath(storeId, `/returns/${id}/approve`), {
+      method: 'POST',
+      body: JSON.stringify(staffNote ? { staffNote } : {}),
+    }),
+  rejectReturn: (storeId: string, id: string, staffNote: string) =>
+    apiRequest<ReturnRow>(storePath(storeId, `/returns/${id}/reject`), {
+      method: 'POST',
+      body: JSON.stringify({ staffNote }),
+    }),
+  markReturnReceived: (storeId: string, id: string) =>
+    apiRequest<ReturnRow>(storePath(storeId, `/returns/${id}/receive`), {
+      method: 'POST',
+    }),
+  completeReturnRefund: (
+    storeId: string,
+    id: string,
+    body: { refundAmount: number; refundMethod: string },
+  ) =>
+    apiRequest<ReturnRow>(storePath(storeId, `/returns/${id}/refund`), {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   updateCourier: (
     storeId: string,

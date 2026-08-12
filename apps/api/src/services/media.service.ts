@@ -48,14 +48,20 @@ export async function deleteMedia(storeId: string, mediaId: string) {
   return { ok: true };
 }
 
+const signedUploadSchema = z
+  .object({
+    filename: z.string().trim().min(1).max(300),
+    mimeType: z.string().trim().min(1).max(100),
+    usageType: z.string().trim().max(40).optional(),
+  })
+  .strict();
+
 /**
  * Cloudinary signed upload URL stub.
  * Returns a stub payload when credentials are missing so local/dev still works.
  */
-export async function getSignedUploadUrl(
-  storeId: string,
-  input: { filename: string; mimeType: string; usageType?: string },
-) {
+export async function getSignedUploadUrl(storeId: string, rawInput: unknown) {
+  const input = signedUploadSchema.parse(rawInput);
   const publicId = `${storeId}/${randomUUID()}`;
 
   if (!hasCloudinary) {
@@ -94,23 +100,28 @@ export async function getSignedUploadUrl(
   };
 }
 
-export async function registerMediaAsset(
-  storeId: string,
-  input: {
-    publicId: string;
-    url: string;
-    filename: string;
-    mimeType: string;
-    bytes: number;
-    usageType?:
-      | 'PRODUCT_IMAGE'
-      | 'STORE_LOGO'
-      | 'STORE_BANNER'
-      | 'CMS_ASSET'
-      | 'INVOICE'
-      | 'OTHER';
-  },
-) {
+const registerMediaSchema = z
+  .object({
+    publicId: z.string().trim().min(1).max(300),
+    url: z.string().trim().min(1).max(2000),
+    filename: z.string().trim().min(1).max(300),
+    mimeType: z.string().trim().min(1).max(100),
+    bytes: z.number().int().nonnegative(),
+    usageType: z
+      .enum([
+        'PRODUCT_IMAGE',
+        'STORE_LOGO',
+        'STORE_BANNER',
+        'CMS_ASSET',
+        'INVOICE',
+        'OTHER',
+      ])
+      .optional(),
+  })
+  .strict();
+
+export async function registerMediaAsset(storeId: string, rawInput: unknown) {
+  const input = registerMediaSchema.parse(rawInput);
   return prisma.mediaAsset.create({
     data: {
       storeId,
