@@ -609,6 +609,11 @@ export const storeApi = {
     }),
   getTheme: (storeId: string) =>
     apiRequest<CurrentThemeResponse>(storePath(storeId, '/theme/current')),
+  requestThemeCustomization: (storeId: string, message?: string) =>
+    apiRequest<{ id: string }>(storePath(storeId, '/theme/customization-request'), {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
   saveThemeDraft: (
     storeId: string,
     payload: { themeSettings: Record<string, unknown>; layout?: unknown },

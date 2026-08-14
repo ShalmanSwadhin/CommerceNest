@@ -2,19 +2,24 @@ import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 
 /**
- * V1 plan-tier limits. Deliberately simple (product count, staff seats) —
- * no billing/metering infrastructure, just soft caps enforced at the two
- * places merchants would otherwise grow past what their plan is meant for.
- * `null` means unlimited.
+ * Fallback limits used only when a store's planTier doesn't match any
+ * Package row (e.g. the package was deleted, or a fresh install hasn't
+ * seeded packages yet). The Package table — Master Admin-editable via
+ * /admin/packages — is the actual source of truth; this is a safety net,
+ * not the primary mechanism. `null` means unlimited.
  */
-const PLAN_LIMITS: Record<string, { maxProducts: number | null; maxStaff: number | null }> = {
+const FALLBACK_LIMITS: Record<string, { maxProducts: number | null; maxStaff: number | null }> = {
   starter: { maxProducts: 50, maxStaff: 3 },
-  growth: { maxProducts: 500, maxStaff: 10 },
+  business: { maxProducts: 500, maxStaff: 10 },
   pro: { maxProducts: null, maxStaff: null },
 };
 
-function limitsFor(planTier: string) {
-  return PLAN_LIMITS[planTier] ?? PLAN_LIMITS.starter!;
+async function limitsFor(planTier: string) {
+  const pkg = await prisma.package.findUnique({ where: { slug: planTier } });
+  if (pkg) {
+    return { maxProducts: pkg.maxProducts, maxStaff: pkg.maxStaff };
+  }
+  return FALLBACK_LIMITS[planTier] ?? FALLBACK_LIMITS.starter!;
 }
 
 export async function assertWithinProductLimit(storeId: string) {
@@ -23,7 +28,7 @@ export async function assertWithinProductLimit(storeId: string) {
     select: { planTier: true },
   });
   if (!store) throw AppError.notFound('Store not found');
-  const { maxProducts } = limitsFor(store.planTier);
+  const { maxProducts } = await limitsFor(store.planTier);
   if (maxProducts === null) return;
 
   const count = await prisma.product.count({ where: { storeId } });
@@ -41,7 +46,7 @@ export async function assertWithinStaffLimit(storeId: string) {
     select: { planTier: true },
   });
   if (!store) throw AppError.notFound('Store not found');
-  const { maxStaff } = limitsFor(store.planTier);
+  const { maxStaff } = await limitsFor(store.planTier);
   if (maxStaff === null) return;
 
   const count = await prisma.user.count({ where: { storeId } });
@@ -53,6 +58,6 @@ export async function assertWithinStaffLimit(storeId: string) {
   }
 }
 
-export function getPlanLimits(planTier: string) {
+export async function getPlanLimits(planTier: string) {
   return limitsFor(planTier);
 }

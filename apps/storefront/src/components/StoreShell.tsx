@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { normalizeThemeDocument } from '@commercenest/types/schemas/theme';
 import { Button } from '@commercenest/ui';
-import { Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { Clock, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { extractThemeSettings, storefrontApi } from '../lib/api';
 import { CtaLink } from '../lib/ctaLink';
@@ -105,6 +105,35 @@ export function StoreShell() {
             void homeQ.refetch();
           }}
         />
+      </div>
+    );
+  }
+
+  const trialExpired = Boolean(
+    (homeQ.data?.store as { trialExpired?: boolean } | undefined)?.trialExpired ??
+      (storeQ.data as { trialExpired?: boolean } | undefined)?.trialExpired,
+  );
+
+  if (trialExpired) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <Clock className="size-6" />
+          </div>
+          <h1 className="text-lg font-semibold text-slate-900">This trial store has ended</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            {store?.name ? `${store.name}'s` : 'This'} free trial period has expired.
+            The store owner can contact CommerceNest to extend the trial or activate a
+            paid plan to keep this storefront live.
+          </p>
+          <a
+            href="https://commercenest.com"
+            className="mt-6 inline-flex items-center justify-center rounded-lg bg-[#6C1DB3] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Learn about CommerceNest
+          </a>
+        </div>
       </div>
     );
   }

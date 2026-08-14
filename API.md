@@ -85,8 +85,11 @@ Common codes: `UNAUTHORIZED`, `FORBIDDEN`, `TENANT_MISMATCH`, `NOT_FOUND`, `VALI
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/admin/stores/:id/impersonate` | Start impersonation session |
-| POST | `/api/admin/impersonate/:sessionId/end` | End session |
+| POST | `/api/admin/stores/:id/impersonate` | Start impersonation session — returns `{ session, store, handoffCode }`. **No JWTs in this response** — `handoffCode` is a random, single-use, 60-second-TTL opaque code stored server-side (KV) mapped to the real tokens. |
+| POST | `/api/auth/impersonation/handoff` | Body `{ code }` (no auth required — this **is** how the destination tab authenticates). Exchanges the handoff code for `{ accessToken, refreshToken }`. The code is deleted on first read; a replayed or expired code returns `401`. Rate-limited (20/min/IP). |
+| POST | `/api/admin/impersonate/:sessionId/end` | End session — restores a clean Master Admin token with no store scope |
+
+See [SECURITY.md](./SECURITY.md#impersonation) for the full flow and why raw tokens never touch a URL.
 
 ### Theme (Master Admin owned)
 
@@ -134,20 +137,51 @@ Roles: `STORE_OWNER`, `STORE_MANAGER`, `INVENTORY_MANAGER`, `ORDER_MANAGER`, `CU
 
 ### Orders
 
+**Roles:** Owner, Manager, Order Manager, Customer Support (not Inventory Manager — orders/customers are outside its scope, enforced server-side to match what the Store Admin nav already hides)
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/orders` | List (`?status`, `?paymentStatus`, pagination) |
-| GET | `/orders/:orderId` | Detail with items + customer |
+| GET | `/orders/:orderId` | Detail with items + customer (customer fields are whitelisted — never includes `passwordHash`) |
 | POST | `/orders/:orderId/status` | Transition status |
 | POST | `/orders/:orderId/confirm-cod` | Record COD phone confirmation |
 | PATCH | `/orders/:orderId/courier` | Set courier name/tracking |
 
 ### Customers
 
+**Roles:** same as Orders above.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/customers` | List with risk levels |
-| GET | `/customers/:customerId` | Detail + order history |
+| GET | `/customers` | List with risk levels (never includes `passwordHash`) |
+| GET | `/customers/:customerId` | Detail + order history (never includes `passwordHash`) |
+
+### Coupons
+
+**Roles:** Owner, Manager (create/update/delete — rate-limited 20/min on create).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/coupons` | List |
+| POST | `/coupons` | Create — `{ code, discountType: 'PERCENTAGE'\|'FIXED', discountValue, minOrderValue?, startsAt?, endsAt?, usageLimit?, perCustomerLimit? }` |
+| PATCH | `/coupons/:couponId` | Update any field above, or `active` |
+| DELETE | `/coupons/:couponId` | Hard-deletes if unused; deactivates (preserves redemption history) if it has ever been redeemed |
+
+Discount is always computed server-side inside the checkout transaction (`storefront.service.ts#checkout`) — the client only ever sends a `couponCode` string, never an amount.
+
+### Returns & refunds
+
+**Roles:** approve/reject — Owner, Manager, Order Manager, Customer Support. Receive — Owner, Manager, Order Manager (not Customer Support). Refund completion — Owner, Manager only (money-movement is the most restricted step).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/returns` | List (`?status`) |
+| POST | `/returns/:returnId/approve` | `REQUESTED → APPROVED` |
+| POST | `/returns/:returnId/reject` | `REQUESTED → REJECTED`, body `{ staffNote }` (required) |
+| POST | `/returns/:returnId/receive` | `APPROVED → ITEM_RECEIVED` |
+| POST | `/returns/:returnId/refund` | `ITEM_RECEIVED → REFUNDED`, body `{ refundAmount, refundMethod: 'BKASH'\|'CASH'\|'BANK_TRANSFER'\|'STORE_CREDIT' }` — manual refund only, no automated bKash refund exists; also sets the order's `paymentStatus` to `REFUNDED` |
+
+Customer-side request creation is under `/api/storefront/:storeSlug/account/returns` (see below).
 
 ### Payments — Manual bKash (primary V1 flow)
 
@@ -188,13 +222,25 @@ Sets `paymentStatus` to `APPROVED` or `REJECTED`, records verifier, emits `Payme
 | DELETE | `/media/:mediaId` | Delete asset |
 | GET | `/settings/business` | Store business settings |
 | PATCH | `/settings/business` | Update name, bKash number, instructions |
-| GET | `/theme/current` | Read-only theme (draft + published) |
 | GET | `/domains` | List domains |
 | POST | `/domains` | Add custom domain |
 | POST | `/domains/verify` | Verify DNS (stub) |
 | POST | `/domains/primary` | Set primary domain |
 | GET | `/cms` | CMS blocks |
 | PUT | `/cms/:key` | Upsert CMS block |
+| GET | `/onboarding-checklist` | Merchant setup progress (products added, payment configured, theme published, etc.) — drives the Store Admin onboarding widget |
+
+### Theme (Store owned)
+
+**Roles:** Owner, Manager, Master Admin. Same draft/publish/version-history workflow as the Master Admin theme endpoints above — a store owner can self-serve theme changes without Master Admin involvement.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/theme/current` | Current draft + published theme |
+| PUT | `/theme/draft` | Save draft layout/settings |
+| POST | `/theme/publish` | Publish draft to live |
+| GET | `/theme/versions` | Version history |
+| POST | `/theme/versions/:versionId/restore` | Restore version to draft |
 
 ---
 
@@ -234,9 +280,12 @@ No staff auth. Store resolved by slug.
     "recipientName": "Ayesha Rahman",
     "recipientPhone": "01755555555"
   },
-  "paymentMethod": "MANUAL_BKASH"
+  "paymentMethod": "MANUAL_BKASH",
+  "couponCode": "WELCOME10"
 }
 ```
+
+`couponCode` is optional. `deliveryCharge`, `discountAmount`, and `total` are **never** accepted from the client — they're always computed server-side inside the checkout transaction (shipping rate by district, coupon validity/limits/min-order, and line-item totals from the current DB prices), so a tampered client payload cannot change the charged amount.
 
 #### Submit bKash body
 
@@ -260,6 +309,23 @@ Moves order to `paymentStatus: PENDING_VERIFICATION`.
 | POST | `/auth/otp/verify` | Verify OTP, return session token |
 
 In development, OTP response includes `devCode` for testing.
+
+### Account (authenticated storefront customer)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/account/orders` | Customer's own order history |
+| GET | `/account/returns` | Customer's own return requests |
+| POST | `/account/returns` | Request a return for a delivered order item |
+
+### SEO
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/storefront/_seo/sitemap.xml` | Per-tenant sitemap (products + categories), tenant resolved from the `Host`/`X-Forwarded-Host` header |
+| GET | `/api/storefront/_seo/robots.txt` | Per-tenant robots directives |
+
+These are the underlying API routes (mounted on `storefrontRootRouter`, not under `:storeSlug`, since the tenant comes from the request host, not the path). The gateway (`scripts/dev-gateway.mjs` in dev) rewrites the conventional public paths `GET /sitemap.xml` and `GET /robots.txt` on any storefront tenant host to these API routes, so crawlers hit the standard URLs. Each store's output only ever lists that store's own URLs, never another tenant's — see `apps/api/src/services/seo.service.ts`.
 
 ---
 

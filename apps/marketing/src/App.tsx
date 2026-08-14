@@ -1,11 +1,15 @@
 import { Route, Routes } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { LegalPage } from './pages/LegalPage';
+import { TrialRequestPage } from './pages/TrialRequestPage';
+import { PricingPage } from './pages/PricingPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/trial" element={<TrialRequestPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
       <Route
         path="/terms"
         element={

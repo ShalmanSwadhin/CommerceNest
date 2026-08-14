@@ -79,6 +79,26 @@ async function issueTokens(
   return { accessToken, refreshToken, jti };
 }
 
+/** Fire-and-forget audit write for a failed login attempt — never blocks the 401 on it. */
+function logLoginFailure(
+  user: { id: string; role: string; storeId: string | null } | null,
+  email: string,
+  reason: string,
+  meta: { ip?: string; userAgent?: string },
+) {
+  writeAuditLog({
+    actorId: user?.id ?? null,
+    actorRole: (user?.role as never) ?? null,
+    action: 'AUTH_LOGIN_FAILED',
+    targetType: 'User',
+    targetId: user?.id ?? null,
+    storeId: user?.storeId ?? null,
+    metadata: { email, reason },
+    ip: meta.ip ?? null,
+    userAgent: meta.userAgent ?? null,
+  }).catch(() => undefined);
+}
+
 export async function login(
   input: unknown,
   meta: { ip?: string; userAgent?: string },
@@ -86,17 +106,30 @@ export async function login(
   const data = staffLoginSchema.parse(input);
   const user = await prisma.user.findUnique({ where: { email: data.email } });
   if (!user || !user.passwordHash) {
+    logLoginFailure(null, data.email, 'unknown_email_or_no_password', meta);
     throw AppError.unauthorized('Invalid email or password');
   }
   if (user.status !== UserStatus.ACTIVE) {
+    logLoginFailure(user, data.email, 'inactive_account', meta);
     throw AppError.unauthorized('Account is not active');
   }
   const ok = await verifyPassword(data.password, user.passwordHash);
   if (!ok) {
+    logLoginFailure(user, data.email, 'bad_password', meta);
     throw AppError.unauthorized('Invalid email or password');
   }
 
   const tokens = await issueTokens(user);
+  writeAuditLog({
+    actorId: user.id,
+    actorRole: user.role as never,
+    action: 'AUTH_LOGIN_SUCCESS',
+    targetType: 'User',
+    targetId: user.id,
+    storeId: user.storeId,
+    ip: meta.ip ?? null,
+    userAgent: meta.userAgent ?? null,
+  }).catch(() => undefined);
   emitAfterCommit('UserLoggedIn', {
     storeId: user.storeId,
     actorId: user.id,

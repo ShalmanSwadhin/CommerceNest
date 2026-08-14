@@ -238,6 +238,15 @@ export interface AnalyticsSnapshotUpdatedPayload {
   periodEnd: string;
 }
 
+export interface TrialLeadCreatedPayload {
+  trialLeadId: string;
+  storeId: string | null;
+  businessName: string;
+  prospectName: string;
+  email: string;
+  trialUrl: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Concrete event types
 // ---------------------------------------------------------------------------
@@ -342,6 +351,10 @@ export type AnalyticsSnapshotUpdatedEvent = DomainEvent<
   'AnalyticsSnapshotUpdated',
   AnalyticsSnapshotUpdatedPayload
 >;
+export type TrialLeadCreatedEvent = DomainEvent<
+  'TrialLeadCreated',
+  TrialLeadCreatedPayload
+>;
 
 /** Discriminated union of all V1 catalog events */
 export type CommerceNestDomainEvent =
@@ -372,7 +385,8 @@ export type CommerceNestDomainEvent =
   | ImpersonationSessionStartedEvent
   | ImpersonationSessionEndedEvent
   | AuditLogWrittenEvent
-  | AnalyticsSnapshotUpdatedEvent;
+  | AnalyticsSnapshotUpdatedEvent
+  | TrialLeadCreatedEvent;
 
 export type DomainEventName = CommerceNestDomainEvent['eventName'];
 
@@ -406,6 +420,7 @@ export const DOMAIN_EVENT_NAMES = [
   'ImpersonationSessionEnded',
   'AuditLogWritten',
   'AnalyticsSnapshotUpdated',
+  'TrialLeadCreated',
 ] as const satisfies readonly DomainEventName[];
 
 export function isDomainEventName(value: string): value is DomainEventName {

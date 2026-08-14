@@ -103,6 +103,22 @@ Exceeded limits return `429` with code `RATE_LIMITED`.
 
 ---
 
+## Redis: when it's actually required
+
+`apps/api/src/lib/redis.ts` uses Redis for three things: refresh-token revocation (`jti` → user ID, 7-day TTL), rate-limit counters (`kvIncr`), and OTP codes (`kvSet`/`kvGet`, 10-minute TTL). All three fall back transparently to an in-process `Map` when `REDIS_URL` is unset, or if Redis becomes unreachable after a successful connection (`useMemory` flips back on any client error — see `redis.ts:54-57`) — the API never crashes or degrades functionality because of Redis; it silently switches storage backend.
+
+**Single API instance (the expected V1 pilot topology — one VPS, one API container): Redis is optional.** The in-memory fallback is fully correct for this case — there's only one process holding the state, so nothing gets out of sync.
+
+**Redis becomes mandatory the moment you run more than one API instance or process** (horizontal scaling, PM2 cluster mode, multiple containers behind a load balancer). Each process would otherwise hold its own independent in-memory `Map`, which breaks in ways that are easy to miss in testing and only show up under real traffic:
+
+- **Rate limits become meaningless** — a client hitting instance A and instance B alternately gets `max` requests allowed *per instance*, not globally.
+- **Refresh-token revocation stops working reliably** — a token revoked (logout) on instance A is still valid on instance B until that instance's process restarts.
+- **OTP codes fail intermittently** — a customer's `POST /otp/request` might land on instance A (code stored there) while their `POST /otp/verify` lands on instance B (code not found) — a routing-dependent, hard-to-reproduce bug.
+
+`apps/api/src/lib/env.ts` prints a `console.error` at production startup (not fatal — see above) whenever `REDIS_URL` is unset, specifically so "why is logout/rate-limiting flaky" doesn't have to be rediscovered from scratch under load. Set `REDIS_URL` before scaling past one instance; it's a drop-in config change, not a code change (the fallback logic is entirely inside `redis.ts` and requires no call-site changes).
+
+---
+
 ## Audit log
 
 All sensitive actions write to `AuditLog`:
@@ -115,6 +131,24 @@ All sensitive actions write to `AuditLog`:
 Master Admin can query via `GET /api/admin/audit-logs`.
 
 Audit entries emit `AuditLogWritten` domain events.
+
+### Coverage
+
+| Area | Actions logged |
+|------|-----------------|
+| Authentication | `AUTH_LOGIN_SUCCESS`, `AUTH_LOGIN_FAILED` (with a `reason`: `unknown_email_or_no_password` / `inactive_account` / `bad_password` — deliberately more specific than the identical 401 message returned to the client, so a security review can distinguish credential-stuffing from a stale account without giving an attacker that same signal) |
+| Impersonation | `IMPERSONATION_STARTED`, `IMPERSONATION_ENDED`; every mutating request a Master Admin makes to `/api/store/:id/*` **without** an active impersonation session additionally logs `MASTER_ADMIN_DIRECT_STORE_WRITE` (`storeScope.ts`) — direct platform-ops writes leave a trail even outside the formal impersonation flow |
+| Payments | `PAYMENT_APPROVED`, `PAYMENT_REJECTED` (manual bKash) |
+| Store lifecycle | create, suspend, reactivate, archive, business-settings update |
+| Theme | `THEME_PUBLISHED` |
+| Staff | invite, role/status update, removal |
+| Platform settings | `PLATFORM_SETTINGS_UPDATED` |
+
+### Retention (V1)
+
+**No automated deletion or archival exists, and none is planned for V1** — at pilot scale (a handful of merchants), the audit log's total row count over a year is small enough that indefinite retention in Postgres carries negligible cost, and every deletion path (schema-level `onDelete: SetNull` on all three `AuditLog` relations, confirmed by inspection — see `schema.prisma`) is designed so that removing a `User`, `Store`, or `ImpersonationSession` through normal product flows (staff removal, store archival, ending an impersonation session) **nulls the foreign key, never deletes the audit row**. No code path in the API calls `auditLog.delete`/`deleteMany` anywhere.
+
+When retention eventually needs bounding (regulatory requirement, or the table becoming large enough to matter operationally — neither is true at V1 pilot scale), the practical approach is a **manually-run, reviewed script** — not an automatic cron job — that a human executes deliberately: e.g. `DELETE FROM audit_logs WHERE created_at < now() - interval '2 years' AND action NOT IN ('AUTH_LOGIN_FAILED', 'IMPERSONATION_STARTED', 'IMPERSONATION_ENDED', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'MASTER_ADMIN_DIRECT_STORE_WRITE')`, keeping authentication/impersonation/payment events indefinitely (or on a much longer horizon) since those are exactly the records a post-incident investigation would need, and they're the cheapest category to keep (low volume relative to routine CRUD). Do not build this until it's actually needed — an unused archival system is complexity with no payoff at this scale.
 
 ---
 

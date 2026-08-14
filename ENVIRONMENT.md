@@ -56,9 +56,10 @@ Copy `.env.example` to `.env` at the repository root. The API loads env via `dot
 | | |
 |---|---|
 | **Example** | `redis://localhost:6379` |
-| **Required** | No |
-| **Purpose** | Refresh token storage, rate limiting, OTP codes |
-| **Fallback** | If unset or unreachable, API uses in-memory Map (fine for local dev; not for multi-instance production) |
+| **Required** | No for a single API instance; **yes** the moment you run more than one (see [SECURITY.md](./SECURITY.md#redis-when-its-actually-required) for exactly why) |
+| **Purpose** | Refresh token revocation, rate-limit counters, OTP codes |
+| **Fallback** | If unset or unreachable, API uses an in-process `Map` — correct for one instance, silently inconsistent across multiple instances/processes |
+| **Production behavior** | `env.ts` prints a `console.error` at startup (not fatal) if unset in production, so "why is logout/rate-limiting flaky under load" is diagnosable from the first deploy log instead of rediscovered later |
 
 ---
 
@@ -176,7 +177,27 @@ Server-side validation applied regardless of upload path (`apps/api/src/services
 
 ---
 
+## Email (SMTP)
+
+**Postponed for V1, prepared cleanly, not forced on a paid vendor.** Transactional emails (order placed/confirmed/shipped/delivered, payment approved/rejected, return approved, refund completed) are wired through `apps/api/src/lib/email.ts`, a generic SMTP sender built on `nodemailer` — it works with **any** SMTP source: a merchant's own mailbox, a self-hosted mail server, or a transactional email service, whichever the operator chooses. No specific vendor is required or hardcoded.
+
+Without all five of the variables below set, `hasSmtp` is `false` and every notification is logged (`channel: 'email'`, structured JSON, same pattern as SMS below) instead of sent — this is the default in local development and stays true in production until someone explicitly configures SMTP. `apps/api/src/lib/env.ts` prints a `console.warn` at production startup when SMTP isn't configured (not fatal — the platform is fully functional without email, notifications just don't reach an inbox).
+
+A send failure (bad credentials, SMTP server down) is caught, logged (`logger.error`), and never propagates — a notification email is never allowed to be the reason an order/payment/return operation fails.
+
+### `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM`
+
+| | |
+|---|---|
+| **Example** | `smtp.gmail.com` / `587` / `false` / `you@yourdomain.com` / `app-password` / `"CommerceNest <noreply@yourdomain.com>"` |
+| **Required** | No — omit all five to keep email log-only |
+| **Purpose** | Standard SMTP connection details, passed straight to `nodemailer.createTransport` |
+
+---
+
 ## SMS
+
+Postponed for V1 — intentionally, not an oversight (see `DECISIONS.md`). SMS notifications are **always** logged, never sent, regardless of `SMS_PROVIDER` — that variable exists only to tag which provider *would* handle delivery once a real integration is built; setting it does not enable sending.
 
 ### `SMS_PROVIDER_API_KEY` (template)
 
@@ -187,7 +208,7 @@ Documented placeholder for a future provider key.
 | | |
 |---|---|
 | **Example** | *(empty)* |
-| **Purpose** | When empty, SMS notifications are logged to stdout instead of sent |
+| **Purpose** | Labels the `provider` field in the log-only SMS notification output. Does not enable real delivery — see above. |
 
 ---
 
@@ -263,12 +284,31 @@ Used in `docker-compose.yml`:
 
 ---
 
-## Production checklist
+## Requirements by deployment tier
 
-1. Generate cryptographically random `JWT_*_SECRET` values (≥ 32 chars)
-2. Set `NODE_ENV=production`, `COOKIE_SECURE=true`
-3. Configure real `DATABASE_URL` and `REDIS_URL`
-4. Set `PLATFORM_DOMAIN=commercenest.com`
-5. Set `CORS_ORIGINS` to your admin, app, and storefront origins
-6. Configure Cloudinary if media uploads are required
-7. Do **not** rely on in-memory Redis fallback in multi-instance deployments
+Three distinct tiers, deliberately separated — do not assume what's true at one applies to the next.
+
+### LOCAL DEVELOPMENT
+
+Everything below just works out of the box with **no external services**: `npm install`, copy `.env.example` to `.env`, `npm run db:up` (embedded Postgres, no Docker needed), `npm run db:migrate && npm run db:seed`, `npm run dev`. JWT secrets, Cloudinary, SMTP, and Redis all have safe log-only/in-memory fallbacks — see each section above. `NODE_ENV` defaults to `development`, which is also the *only* value that exposes OTP `devCode`/invite `devToken` in API responses (see [SECURITY.md](./SECURITY.md)).
+
+### MERCHANT PILOT (a handful of real stores, single VPS/container, low traffic)
+
+A real domain and real credentials, but **Redis and Cloudinary are still genuinely optional** at this scale — a single API instance on the in-memory fallback is correct, and the URL-registration media path works without Cloudinary (device upload degrades to storing base64 in Postgres, which is fine short-term at pilot volume, not indefinitely):
+
+1. Generate cryptographically random `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` (≥ 32 chars, never the dev defaults — the API refuses to boot in production with those)
+2. `NODE_ENV=production`, `COOKIE_SECURE=true`
+3. Real `DATABASE_URL` (see [DATABASE.md](./DATABASE.md) for migration + backup setup — `prisma migrate deploy`, never `db push`)
+4. `PLATFORM_DOMAIN` set to your real base domain, `CORS_ORIGINS` set to your real admin/app/storefront origins (leaving either at its `.localhost`/`commercenest.local` development default doesn't open anything up, but it does silently break login/CORS in production — `env.ts` logs a `console.error` at startup if either is left at the default, precisely so this is diagnosed immediately rather than during a confused support call)
+5. A committed initial `ALLOW_PROD_SEED` **should not** be set — the demo-store seed script refuses to run against `NODE_ENV=production` unless you explicitly opt in with a strong `SEED_ADMIN_PASSWORD`, specifically to prevent ever creating the well-known `Admin123!` account on a real database
+6. Cloudinary and SMTP remain optional at this tier — configure them when you're ready, not before
+
+### PRODUCTION (multiple API instances / meaningful merchant count / real launch)
+
+Everything in MERCHANT PILOT, plus:
+
+7. `REDIS_URL` — becomes **mandatory**, not optional, the moment you run more than one API instance/process (see [SECURITY.md](./SECURITY.md#redis-when-its-actually-required) for the specific failure modes of skipping this)
+8. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` — configure before merchants rely on device media upload as their primary workflow (non-technical merchants will; the URL-registration fallback is an advanced/secondary option, not a real substitute at scale)
+9. `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM` — configure so transactional emails actually reach customers instead of only appearing in logs
+10. Confirm `prisma migrate status` reports "up to date" as part of your deploy pipeline (`prisma migrate deploy`, not `db push`) — see [DATABASE.md](./DATABASE.md#migrations)
+11. Set up the backup/recovery procedure in [DATABASE.md](./DATABASE.md#backup--recovery) before you have real merchant data worth losing, not after

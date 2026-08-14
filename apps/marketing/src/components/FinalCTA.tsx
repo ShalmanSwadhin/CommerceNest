@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { homeContent } from '@/content/home';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -15,12 +16,12 @@ export function FinalCTA() {
           {finalCta.supporting} Start a free trial conversation — no credit card required.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <a
-            href={finalCta.primary.href}
+          <Link
+            to={finalCta.primary.href}
             className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-xl bg-white px-6 text-sm font-semibold text-brand no-underline shadow-lift transition hover:bg-slate-50"
           >
             {finalCta.primary.label}
-          </a>
+          </Link>
           <a
             href={finalCta.secondary.href}
             className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-xl border border-white/50 bg-transparent px-6 text-sm font-semibold text-white no-underline transition hover:bg-white/10"

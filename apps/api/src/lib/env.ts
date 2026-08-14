@@ -13,6 +13,9 @@ config();
 
 const DEFAULT_JWT_ACCESS_SECRET = 'dev-access-secret-change-me-32chars!!';
 const DEFAULT_JWT_REFRESH_SECRET = 'dev-refresh-secret-change-me-32chars!';
+const DEFAULT_CORS_ORIGINS =
+  'http://localhost:8080,http://admin.localhost:8080,http://app.localhost:8080,http://techworld-bd.localhost:8080';
+const DEFAULT_PLATFORM_DOMAIN = 'commercenest.local';
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -35,12 +38,8 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
-  CORS_ORIGINS: z
-    .string()
-    .default(
-      'http://localhost:8080,http://admin.localhost:8080,http://app.localhost:8080,http://techworld-bd.localhost:8080',
-    ),
-  PLATFORM_DOMAIN: z.string().default('commercenest.local'),
+  CORS_ORIGINS: z.string().default(DEFAULT_CORS_ORIGINS),
+  PLATFORM_DOMAIN: z.string().default(DEFAULT_PLATFORM_DOMAIN),
   GATEWAY_PORT: z.coerce.number().int().positive().optional(),
   CORS_ALLOW_LOCALHOST_SUBDOMAINS: z
     .string()
@@ -50,6 +49,19 @@ const envSchema = z.object({
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
   SMS_PROVIDER: z.string().optional().default(''),
+  // Generic SMTP — works with any provider (a merchant's own mailbox, a
+  // self-hosted mail server, or a transactional-email service) rather than
+  // integrating one specific paid vendor's API. Empty by default: emails
+  // are logged, not sent, until all of host/user/password/from are set.
+  SMTP_HOST: z.string().optional().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional().default(''),
+  SMTP_PASSWORD: z.string().optional().default(''),
+  SMTP_FROM: z.string().optional().default(''),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
@@ -88,14 +100,70 @@ if (env.NODE_ENV === 'production') {
     Boolean(env.CLOUDINARY_API_KEY) &&
     Boolean(env.CLOUDINARY_API_SECRET);
   if (!hasCloudinaryConfig) {
-    // Not fatal — device uploads fall back to storing a base64 data URL
-    // directly in Postgres, which works but doesn't belong in production
-    // (no CDN, no image optimization, bloats the database). Merchants can
-    // still use the URL-registration path without Cloudinary.
+    // Deliberately not fatal — the URL-registration media path still works
+    // without Cloudinary (a merchant can link an already-hosted image), so
+    // refusing to boot the whole platform over this would be disproportionate.
+    // But it must never be silent: device uploads (the primary, expected path
+    // for non-technical merchants) silently degrade to storing base64 data
+    // URLs directly in Postgres — no CDN, no image optimization, unbounded
+    // row growth. console.error (not warn) so this survives typical
+    // production log-level filtering and paging/alerting on error-level logs.
+    console.error(
+      '[env] PRODUCTION MISCONFIGURATION: CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET are not ' +
+        'fully set. Device media uploads (Theme Builder, product images) will silently fall back ' +
+        'to storing base64 data URLs directly in Postgres instead of a CDN. The URL-registration ' +
+        'media option still works without Cloudinary, but device upload does not belong in ' +
+        'production without it — configure all three CLOUDINARY_* variables before launch.',
+    );
+  }
+  if (env.CORS_ORIGINS === DEFAULT_CORS_ORIGINS) {
+    // Not fatal — the default only allows *.localhost origins, so leaving it
+    // unset in production breaks legitimate cross-origin requests from the
+    // real frontends rather than opening anything up. Still worth a loud
+    // heads-up, since "the admin panel can't log in" is a confusing way to
+    // discover a missing env var.
+    console.error(
+      '[env] PRODUCTION MISCONFIGURATION: CORS_ORIGINS is unset — using the localhost-only ' +
+        'development default. Real production frontend origins will be rejected by CORS until ' +
+        'CORS_ORIGINS is set explicitly (e.g. https://admin.commercenest.com,https://app.commercenest.com,...).',
+    );
+  }
+  if (env.PLATFORM_DOMAIN === DEFAULT_PLATFORM_DOMAIN) {
+    console.error(
+      '[env] PRODUCTION MISCONFIGURATION: PLATFORM_DOMAIN is unset — using the "commercenest.local" ' +
+        'development default. Storefront subdomain/custom-domain resolution and the CORS subdomain ' +
+        'allowlist will not recognize real merchant domains until PLATFORM_DOMAIN is set to your ' +
+        'real base domain (e.g. commercenest.com).',
+    );
+  }
+  if (!env.REDIS_URL) {
+    // Not fatal — a single API instance works correctly on the in-memory
+    // fallback (refresh-token revocation, rate limiting, OTP codes all still
+    // function). It silently breaks the moment you run more than one API
+    // instance/process behind a load balancer, since each process would have
+    // its own independent in-memory state. See DEPLOYMENT.md/SECURITY.md for
+    // exactly when this becomes mandatory.
+    console.error(
+      '[env] PRODUCTION NOTICE: REDIS_URL is not set — refresh-token revocation, rate limiting, ' +
+        'and OTP codes are using an in-memory fallback. This is fine for a single API instance, ' +
+        'but silently breaks (inconsistent rate limits, revoked tokens still working, lost OTP ' +
+        'codes) the moment you run more than one API instance/process. Set REDIS_URL before scaling ' +
+        'horizontally.',
+    );
+  }
+  const hasSmtpConfig =
+    Boolean(env.SMTP_HOST) && Boolean(env.SMTP_USER) && Boolean(env.SMTP_PASSWORD) && Boolean(env.SMTP_FROM);
+  if (!hasSmtpConfig) {
+    // A genuine warn, not error: unlike Cloudinary/Redis/CORS, this has no
+    // security or data-integrity implication — the platform is fully
+    // functional without it, order/payment/return notifications just stay
+    // log-only instead of reaching the customer's inbox.
     console.warn(
-      '[env] CLOUDINARY_* is not configured in production — device media uploads will ' +
-        'fall back to storing base64 data URLs directly in the database instead of a CDN. ' +
-        'Configure CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET before merchants rely on device upload.',
+      '[env] SMTP_* is not configured — transactional emails (order placed/confirmed/shipped/' +
+        'delivered, payment approved/rejected, return approved, refund completed) are logged, not ' +
+        'sent. Set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM to enable real delivery ' +
+        '(any SMTP provider works — a merchant mailbox, self-hosted mail server, or a transactional ' +
+        'email service).',
     );
   }
 }
@@ -130,3 +198,9 @@ export const hasCloudinary =
   Boolean(env.CLOUDINARY_CLOUD_NAME) &&
   Boolean(env.CLOUDINARY_API_KEY) &&
   Boolean(env.CLOUDINARY_API_SECRET);
+
+export const hasSmtp =
+  Boolean(env.SMTP_HOST) &&
+  Boolean(env.SMTP_USER) &&
+  Boolean(env.SMTP_PASSWORD) &&
+  Boolean(env.SMTP_FROM);

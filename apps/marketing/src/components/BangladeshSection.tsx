@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { homeContent } from '@/content/home';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -5,7 +6,7 @@ export function BangladeshSection() {
   const { bangladesh, themesTeaser, pricingTeaser } = homeContent;
 
   return (
-    <section id={bangladesh.id} className="bg-white py-20 sm:py-24">
+    <section id={bangladesh.id} className="scroll-mt-20 bg-white py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <ScrollReveal>
@@ -58,7 +59,7 @@ export function BangladeshSection() {
 
         <div className="mt-16 grid gap-6 lg:grid-cols-2">
           <ScrollReveal>
-            <div id={themesTeaser.id} className="rounded-2xl border border-slate-200 bg-mist p-8">
+            <div id={themesTeaser.id} className="scroll-mt-20 rounded-2xl border border-slate-200 bg-mist p-8">
               <h3 className="text-xl font-bold text-ink">{themesTeaser.title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
                 {themesTeaser.supporting}
@@ -68,18 +69,18 @@ export function BangladeshSection() {
           <ScrollReveal delayMs={60}>
             <div
               id={pricingTeaser.id}
-              className="rounded-2xl border border-brand/20 bg-brand/5 p-8"
+              className="scroll-mt-20 rounded-2xl border border-brand/20 bg-brand/5 p-8"
             >
               <h3 className="text-xl font-bold text-ink">{pricingTeaser.title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
                 {pricingTeaser.supporting}
               </p>
-              <a
-                href={pricingTeaser.cta.href}
+              <Link
+                to={pricingTeaser.cta.href}
                 className="mt-5 inline-flex text-sm font-semibold text-brand no-underline hover:underline"
               >
                 {pricingTeaser.cta.label} →
-              </a>
+              </Link>
             </div>
           </ScrollReveal>
         </div>

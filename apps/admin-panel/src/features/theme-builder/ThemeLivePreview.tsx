@@ -1,7 +1,10 @@
-import type {
-  ThemeDocument,
-  ThemeSection,
+import { memo, useCallback } from 'react';
+import {
+  resolveSectionBackground,
+  type ThemeDocument,
+  type ThemeSection,
 } from '@commercenest/types/schemas/theme';
+import { SectionBackground } from '@commercenest/ui';
 
 type Device = 'desktop' | 'tablet' | 'mobile';
 
@@ -11,13 +14,6 @@ const widths: Record<Device, string> = {
   mobile: '390px',
 };
 
-/** `Number(value || fallback)` treats a legitimate 0 (e.g. 0% overlay) as missing. */
-function numberOrDefault(value: unknown, fallback: number): number {
-  if (value === undefined || value === null || value === '') return fallback;
-  const n = Number(value);
-  return Number.isNaN(n) ? fallback : n;
-}
-
 type ThemeLivePreviewProps = {
   doc: ThemeDocument;
   device: Device;
@@ -26,7 +22,16 @@ type ThemeLivePreviewProps = {
   onSelectSection?: (id: string) => void;
 };
 
-function SectionBlock({
+/**
+ * Memoized — with many sections, every SectionBlock previously reconstructed
+ * its full JSX (gradients, template literals, nested markup) on any theme
+ * change anywhere, including edits to unrelated sections. Sections whose own
+ * props haven't changed now skip that work entirely. `onSelect` takes the
+ * section id so the parent can hand every block the same stable function
+ * reference instead of a fresh per-item closure, which is what makes this
+ * memoization actually take effect.
+ */
+const SectionBlock = memo(function SectionBlock({
   section,
   colors,
   storeName,
@@ -37,31 +42,40 @@ function SectionBlock({
   colors: ThemeDocument['themeSettings']['colors'];
   storeName: string;
   selected: boolean;
-  onSelect?: () => void;
+  onSelect?: (id: string) => void;
 }) {
   if (!section.visible) return null;
   const s = section.settings;
   const ring = selected ? 'ring-2 ring-[#6C1DB3] ring-offset-2' : '';
+  const handleSelect = () => onSelect?.(section.id);
 
   if (section.type === 'hero') {
     const layout = String(s.layout || 'content-left');
-    const imageUrl = String(s.imageUrl || '');
+    const bg = resolveSectionBackground(s);
     return (
       <button
         type="button"
-        onClick={onSelect}
-        className={`relative w-full overflow-hidden text-left ${ring}`}
-        style={{
-          minHeight: s.height === 'sm' ? 220 : s.height === 'md' ? 280 : 340,
-          background: imageUrl
-            ? `linear-gradient(rgba(5,8,22,${numberOrDefault(s.overlay, 45) / 100}), rgba(5,8,22,${numberOrDefault(s.overlay, 45) / 100})), url(${imageUrl}) center/cover`
-            : `linear-gradient(135deg, ${colors.primary}, #0B1023)`,
-        }}
+        onClick={handleSelect}
+        className={`relative block w-full overflow-hidden text-left ${ring}`}
+        style={{ minHeight: s.height === 'sm' ? 220 : s.height === 'md' ? 280 : 340 }}
       >
+        <SectionBackground
+          type={bg.backgroundType}
+          image={bg.image}
+          position={bg.position}
+          color={colors.primary}
+          gradientFrom={colors.primary}
+          gradientTo="#0B1023"
+          overlayType={bg.overlayType}
+          overlayColor={bg.overlayColor}
+          overlayOpacity={bg.overlayOpacity}
+          className="absolute inset-0"
+        />
         <div
-          className={`mx-auto flex max-w-5xl flex-col justify-end px-6 py-10 text-white ${
+          className={`relative mx-auto flex max-w-5xl flex-col justify-end px-6 py-10 text-white ${
             layout === 'centered' ? 'items-center text-center' : 'items-start'
           }`}
+          style={{ minHeight: s.height === 'sm' ? 220 : s.height === 'md' ? 280 : 340 }}
         >
           {s.badge ? (
             <span className="mb-2 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold">
@@ -91,7 +105,7 @@ function SectionBlock({
 
   if (section.type === 'featured-categories') {
     return (
-      <button type="button" onClick={onSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
+      <button type="button" onClick={handleSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
         <h3 className="text-lg font-bold" style={{ color: colors.text }}>
           {String(s.title || 'Shop by Category')}
         </h3>
@@ -117,7 +131,7 @@ function SectionBlock({
   if (section.type === 'featured-products' || section.type === 'best-sellers') {
     const cols = Number(s.columns || 4);
     return (
-      <button type="button" onClick={onSelect} className={`w-full px-6 py-8 text-left ${ring}`} style={{ background: colors.background }}>
+      <button type="button" onClick={handleSelect} className={`w-full px-6 py-8 text-left ${ring}`} style={{ background: colors.background }}>
         <div className="mb-4 flex items-end justify-between">
           <div>
             <h3 className="text-lg font-bold" style={{ color: colors.text }}>
@@ -162,47 +176,106 @@ function SectionBlock({
   }
 
   if (section.type === 'promo-banner') {
+    const bg = resolveSectionBackground(s);
     return (
       <button
         type="button"
-        onClick={onSelect}
-        className={`mx-6 my-4 w-[calc(100%-3rem)] overflow-hidden rounded-2xl px-6 py-10 text-left text-white ${ring}`}
-        style={{
-          background: s.imageUrl
-            ? `linear-gradient(rgba(15,23,42,.45), rgba(15,23,42,.5)), url(${String(s.imageUrl)}) center/cover`
-            : `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`,
-        }}
+        onClick={handleSelect}
+        className={`relative mx-6 my-4 block w-[calc(100%-3rem)] overflow-hidden rounded-2xl text-left text-white ${ring}`}
       >
-        <h3 className="text-xl font-bold">{String(s.heading || 'Promo')}</h3>
-        <p className="mt-1 text-sm text-white/85">{String(s.description || '')}</p>
-        <span className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">
-          {String(s.ctaLabel || 'Shop now')}
-        </span>
+        <SectionBackground
+          type={bg.backgroundType}
+          image={bg.image}
+          position={bg.position}
+          color={colors.primary}
+          gradientFrom={colors.primary}
+          gradientTo={colors.accent}
+          overlayType={bg.overlayType}
+          overlayColor={bg.overlayColor}
+          overlayOpacity={bg.overlayOpacity}
+          className="absolute inset-0"
+        />
+        <div className="relative px-6 py-10">
+          <h3 className="text-xl font-bold">{String(s.heading || 'Promo')}</h3>
+          <p className="mt-1 text-sm text-white/85">{String(s.description || '')}</p>
+          <span className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">
+            {String(s.ctaLabel || 'Shop now')}
+          </span>
+        </div>
       </button>
     );
   }
 
   if (section.type === 'why-choose-us') {
     const items = Array.isArray(s.items) ? s.items : [];
-    return (
-      <button type="button" onClick={onSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
+    const imageUrl = String(s.imageUrl || '');
+    const imageOnLeft = String(s.imagePosition || 'right') === 'left';
+    if (!imageUrl) {
+      return (
+        <button type="button" onClick={handleSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
+          <h3 className="text-lg font-bold" style={{ color: colors.text }}>
+            {String(s.title || 'Why choose us')}
+          </h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {items.slice(0, 4).map((item, i) => {
+              const row = item as { title?: string; description?: string };
+              return (
+                <div key={i} className="rounded-xl border p-3" style={{ borderColor: colors.border }}>
+                  <p className="text-sm font-bold" style={{ color: colors.text }}>
+                    {row.title}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: colors.mutedText }}>
+                    {row.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </button>
+      );
+    }
+    const checklist = (
+      <div>
         <h3 className="text-lg font-bold" style={{ color: colors.text }}>
           {String(s.title || 'Why choose us')}
         </h3>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-3 space-y-2">
           {items.slice(0, 4).map((item, i) => {
             const row = item as { title?: string; description?: string };
             return (
-              <div key={i} className="rounded-xl border p-3" style={{ borderColor: colors.border }}>
-                <p className="text-sm font-bold" style={{ color: colors.text }}>
+              <li key={i} className="flex items-start gap-2">
+                <span
+                  className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-[8px] text-white"
+                  style={{ background: colors.primary }}
+                >
+                  ✓
+                </span>
+                <p className="text-xs font-semibold" style={{ color: colors.text }}>
                   {row.title}
                 </p>
-                <p className="mt-1 text-xs" style={{ color: colors.mutedText }}>
-                  {row.description}
-                </p>
-              </div>
+              </li>
             );
           })}
+        </ul>
+      </div>
+    );
+    const photo = (
+      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-cover bg-center" style={{ backgroundImage: `url(${imageUrl})` }} />
+    );
+    return (
+      <button type="button" onClick={handleSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-center">
+          {imageOnLeft ? (
+            <>
+              {photo}
+              {checklist}
+            </>
+          ) : (
+            <>
+              {checklist}
+              {photo}
+            </>
+          )}
         </div>
       </button>
     );
@@ -210,25 +283,56 @@ function SectionBlock({
 
   if (section.type === 'testimonials') {
     const items = Array.isArray(s.items) ? s.items : [];
+    const bg = resolveSectionBackground(s);
+    const hasBackground = bg.backgroundType !== 'none';
     return (
-      <button type="button" onClick={onSelect} className={`w-full px-6 py-8 text-left ${ring}`} style={{ background: colors.background }}>
-        <h3 className="text-lg font-bold" style={{ color: colors.text }}>
-          {String(s.title || 'Testimonials')}
-        </h3>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {items.slice(0, 3).map((item, i) => {
-            const row = item as { quote?: string; name?: string; business?: string };
-            return (
-              <div key={i} className="rounded-xl border bg-white p-3" style={{ borderColor: colors.border }}>
-                <p className="text-xs leading-relaxed" style={{ color: colors.mutedText }}>
-                  “{row.quote}”
-                </p>
-                <p className="mt-2 text-xs font-bold" style={{ color: colors.text }}>
-                  {row.name}
-                </p>
-              </div>
-            );
-          })}
+      <button type="button" onClick={handleSelect} className={`relative block w-full overflow-hidden text-left ${ring}`}>
+        {hasBackground ? (
+          <SectionBackground
+            type={bg.backgroundType}
+            image={bg.image}
+            position={bg.position}
+            color={colors.primary}
+            gradientFrom={colors.primary}
+            gradientTo="#0B1023"
+            overlayType={bg.overlayType}
+            overlayColor={bg.overlayColor}
+            overlayOpacity={bg.overlayOpacity}
+            className="absolute inset-0"
+          />
+        ) : null}
+        <div
+          className="relative px-6 py-8"
+          style={{ background: hasBackground ? undefined : colors.background }}
+        >
+          <h3 className="text-lg font-bold" style={{ color: hasBackground ? '#fff' : colors.text }}>
+            {String(s.title || 'Testimonials')}
+          </h3>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {items.slice(0, 3).map((item, i) => {
+              const row = item as { quote?: string; name?: string; business?: string };
+              return (
+                <div
+                  key={i}
+                  className={hasBackground ? 'rounded-xl bg-white/10 p-3 backdrop-blur-sm' : 'rounded-xl border bg-white p-3'}
+                  style={hasBackground ? undefined : { borderColor: colors.border }}
+                >
+                  <p
+                    className="text-xs leading-relaxed"
+                    style={{ color: hasBackground ? 'rgba(255,255,255,0.85)' : colors.mutedText }}
+                  >
+                    “{row.quote}”
+                  </p>
+                  <p
+                    className="mt-2 text-xs font-bold"
+                    style={{ color: hasBackground ? '#fff' : colors.text }}
+                  >
+                    {row.name}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </button>
     );
@@ -238,7 +342,7 @@ function SectionBlock({
     return (
       <button
         type="button"
-        onClick={onSelect}
+        onClick={handleSelect}
         className={`mx-6 my-6 w-[calc(100%-3rem)] rounded-2xl px-6 py-8 text-left text-white ${ring}`}
         style={{ background: colors.primary }}
       >
@@ -257,7 +361,7 @@ function SectionBlock({
   }
 
   return null;
-}
+});
 
 export function ThemeLivePreview({
   doc,
@@ -272,11 +376,26 @@ export function ThemeLivePreview({
   const header = themeSettings.header;
   const footer = themeSettings.footer;
   const radius = String(themeSettings.cornerRadius || 12);
+  // Stable across renders so SectionBlock's memoization isn't defeated by a
+  // fresh closure every time (colors/typography edits shouldn't force every
+  // section to redo its JSX construction).
+  const handleSelectSection = useCallback(
+    (id: string) => onSelectSection?.(id),
+    [onSelectSection],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center overflow-auto bg-[#E8EAF0] p-4">
+      {/* shrink-0 is load-bearing: this div's parent is a flex column with
+          overflow-auto, and flex items default to flex-shrink: 1 — without
+          shrink-0, the browser compresses this frame down to whatever
+          space is available instead of letting it keep its natural content
+          height, so the parent never sees an overflow to scroll and the
+          compressed (and `overflow-hidden`) frame silently clips everything
+          past the fold instead. shrink-0 lets it stay its full height so
+          the parent's overflow-auto has something real to scroll. */}
       <div
-        className="min-h-[640px] w-full overflow-hidden border border-black/5 bg-white shadow-xl transition-all"
+        className="min-h-[640px] w-full shrink-0 overflow-hidden border border-black/5 bg-white shadow-xl transition-all"
         style={{
           maxWidth: widths[device],
           borderRadius: 16,
@@ -328,7 +447,7 @@ export function ThemeLivePreview({
             colors={colors}
             storeName={storeName}
             selected={selectedSectionId === section.id}
-            onSelect={() => onSelectSection?.(section.id)}
+            onSelect={handleSelectSection}
           />
         ))}
 

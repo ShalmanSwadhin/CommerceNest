@@ -51,30 +51,9 @@ export const homeContent = {
 
   nav: [
     { id: 'features', label: 'Features', href: '#features' },
-    { id: 'pricing', label: 'Pricing', href: '#pricing' },
     { id: 'themes', label: 'Themes', href: '#themes' },
-    {
-      id: 'resources',
-      label: 'Resources',
-      href: '#resources',
-      children: [
-        {
-          label: 'Documentation',
-          href: '#resources',
-          description: 'Architecture, API, and deployment guides',
-        },
-        {
-          label: 'Guides',
-          href: '#features',
-          description: 'How merchants run stores on CommerceNest',
-        },
-        {
-          label: 'Help Center',
-          href: '#contact',
-          description: 'Get answers and contact the team',
-        },
-      ],
-    },
+    { id: 'pricing', label: 'Pricing', href: '/pricing' },
+    { id: 'how-it-works', label: 'How It Works', href: '#how-it-works' },
     { id: 'about', label: 'About', href: '#about' },
     { id: 'contact', label: 'Contact', href: '#contact' },
   ] satisfies HomeNavItem[],
@@ -92,7 +71,7 @@ export const homeContent = {
       'Themes, CMS & Custom Domains',
       'Powerful Admin & Analytics',
     ],
-    primaryCta: { label: 'Start Your 14-Day Free Trial', href: '#contact' },
+    primaryCta: { label: 'Start Your Free Trial', href: '/trial' },
     secondaryCta: { label: 'Book a Demo', href: '#contact' },
     trustLine: 'Built for ambitious businesses across Bangladesh',
     floatingBadge: '100% Bangladesh Focused',
@@ -180,6 +159,96 @@ export const homeContent = {
         icon: 'headset',
       },
     ] satisfies HomeFeature[],
+  },
+
+  howItWorks: {
+    id: 'how-it-works',
+    eyebrow: 'How it works',
+    title: 'From signup to your first order',
+    supporting:
+      'CommerceNest handles the setup work so you can focus on your products.',
+    steps: [
+      {
+        id: 'start',
+        title: 'Start your free trial',
+        description:
+          'Tell us about your business and we provision a real, working storefront instantly — no waiting.',
+      },
+      {
+        id: 'storefront',
+        title: 'CommerceNest prepares your storefront',
+        description:
+          'Your trial store launches with a ready-made theme and layout, live at your own subdomain.',
+      },
+      {
+        id: 'products',
+        title: 'Add your products',
+        description:
+          'Add products, categories, and images from the Store Admin dashboard.',
+      },
+      {
+        id: 'configure',
+        title: 'Configure your business',
+        description:
+          'Set your bKash number, shipping rates, and delivery areas so checkout works the way your business does.',
+      },
+      {
+        id: 'package',
+        title: 'Choose a package',
+        description:
+          'When you are ready to go live, pick the Starter, Business, or Pro plan that fits your store.',
+      },
+      {
+        id: 'publish',
+        title: 'Publish',
+        description:
+          'Your storefront design is reviewed and published by the CommerceNest team, then goes live for customers.',
+      },
+      {
+        id: 'orders',
+        title: 'Receive and manage orders',
+        description:
+          'Take orders via Cash on Delivery or manual bKash, and manage everything from your dashboard.',
+      },
+    ],
+  },
+
+  faq: {
+    id: 'faq',
+    eyebrow: 'Questions',
+    title: 'Frequently asked questions',
+    items: [
+      {
+        id: 'trial-length',
+        question: 'How long is the free trial?',
+        answer:
+          'The default trial period is 7 days, configurable by the CommerceNest team. Your trial storefront stays live and your data is preserved even after the trial period — nothing is deleted automatically.',
+      },
+      {
+        id: 'payment-methods',
+        question: 'What payment methods are supported?',
+        answer:
+          'Cash on Delivery (COD) and manual bKash are supported today, matching how most Bangladeshi merchants already sell.',
+      },
+      {
+        id: 'theme-customization',
+        question: 'Can I customize my storefront design?',
+        answer:
+          'You can choose from ready-made storefront layouts, and CommerceNest manages publishing and updates for you. Fully custom design work is available as an additional service — the Pro plan includes it.',
+      },
+      {
+        id: 'multiple-stores',
+        question: 'Can I run more than one store?',
+        answer:
+          'Yes — CommerceNest is built as a multi-tenant platform, so a single business can operate multiple isolated storefronts.',
+      },
+      {
+        id: 'pricing-change',
+        question: 'Can I change plans later?',
+        answer:
+          'Yes. Contact the CommerceNest team to move between Starter, Business, and Pro as your store grows.',
+      },
+    ],
   },
 
   bangladesh: {
@@ -306,21 +375,21 @@ export const homeContent = {
     id: 'pricing',
     title: 'Simple plans for growing merchants',
     supporting:
-      'Start with a free trial conversation. Pricing packages will be published as CommerceNest goes live for onboarding.',
-    cta: { label: 'Talk to us about pricing', href: '#contact' },
+      'Starter, Business, and Pro plans in BDT — see exactly what is included in each before you start your trial.',
+    cta: { label: 'See full pricing', href: '/pricing' },
   },
 
   themesTeaser: {
     id: 'themes',
-    title: 'Themes that look ready for launch',
+    title: 'Storefront themes, managed for you',
     supporting:
-      'Draft, publish, and roll back storefront themes from Master Admin — merchants get polished shops without custom engineering.',
+      'Choose from ready-made storefront layouts and let CommerceNest publish and manage your theme — a fast, professional storefront without hiring a developer. Want something custom? Request theme customization as an add-on service.',
   },
 
   finalCta: {
     title: 'Ready to Grow Your E-commerce Business?',
     supporting: 'Start building your online business with CommerceNest.',
-    primary: { label: 'Start Free Trial', href: '#contact' },
+    primary: { label: 'Start Free Trial', href: '/trial' },
     secondary: { label: 'Schedule a Demo', href: '#contact' },
   },
 
@@ -338,20 +407,18 @@ export const homeContent = {
         title: 'Platform',
         links: [
           { label: 'Features', href: '#features' },
-          { label: 'Pricing', href: '#pricing' },
           { label: 'Themes', href: '#themes' },
+          { label: 'Pricing', href: '/pricing' },
           { label: 'Security', href: '#security' },
-          { label: 'API Documentation', href: '#resources' },
+          { label: 'Start Free Trial', href: '/trial' },
         ],
       },
       {
         title: 'Resources',
         links: [
-          { label: 'Documentation', href: '#resources' },
-          { label: 'Guides', href: '#features' },
-          { label: 'Blog', href: '#resources' },
+          { label: 'How It Works', href: '#how-it-works' },
+          { label: 'FAQ', href: '#faq' },
           { label: 'Help Center', href: '#contact' },
-          { label: 'Community', href: '#contact' },
         ],
       },
       {

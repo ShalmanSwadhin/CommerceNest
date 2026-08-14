@@ -12,14 +12,14 @@ import { emitAfterCommit } from '../events/emit.js';
 import { createInviteToken } from './auth.service.js';
 import { writeAuditLog } from './audit.service.js';
 
-const defaultLayout = {
+export const defaultLayout = {
   sections: [
     { type: 'hero', title: 'Welcome', subtitle: 'Shop with CommerceNest' },
     { type: 'featured-products', limit: 8 },
   ],
 };
 
-const defaultTheme = {
+export const defaultTheme = {
   primaryColor: '#0F766E',
   accentColor: '#F59E0B',
   fontFamily: 'DM Sans',

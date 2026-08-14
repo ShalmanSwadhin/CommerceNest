@@ -172,6 +172,24 @@ export const RefundMethod = {
 } as const;
 export type RefundMethod = (typeof RefundMethod)[keyof typeof RefundMethod];
 
+export const TrialLeadStatus = {
+  LEAD: 'LEAD',
+  TRIAL_PENDING: 'TRIAL_PENDING',
+  TRIAL_ACTIVE: 'TRIAL_ACTIVE',
+  TRIAL_EXPIRED: 'TRIAL_EXPIRED',
+  CONVERTED: 'CONVERTED',
+  REJECTED: 'REJECTED',
+} as const;
+export type TrialLeadStatus =
+  (typeof TrialLeadStatus)[keyof typeof TrialLeadStatus];
+
+export const CustomThemeAvailability = {
+  INCLUDED: 'INCLUDED',
+  ADDITIONAL_CHARGE: 'ADDITIONAL_CHARGE',
+} as const;
+export type CustomThemeAvailability =
+  (typeof CustomThemeAvailability)[keyof typeof CustomThemeAvailability];
+
 /** Bangladesh mobile number: 01[3-9] followed by 8 digits (11 total). */
 export const BANGLADESH_PHONE_REGEX = /^01[3-9]\d{8}$/;
 

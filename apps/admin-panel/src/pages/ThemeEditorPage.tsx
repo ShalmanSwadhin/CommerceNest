@@ -25,7 +25,7 @@ export function ThemeEditorPage() {
   if (routeStoreId || storeId) {
     const id = routeStoreId || storeId;
     return (
-      <div className="-m-4 md:-m-6">
+      <div className="-m-4 h-full md:-m-6">
         <ThemeBuilder storeId={id} />
       </div>
     );

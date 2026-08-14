@@ -141,8 +141,26 @@ storefrontRouter.get(
     const categories = await prisma.category.findMany({
       where: { storeId: store.id },
       orderBy: { name: 'asc' },
+      include: {
+        // Themes can show a representative photo per category — derived
+        // from the category's own catalog (no separate "category image"
+        // field to manage), so it's only ever a real product photo, never
+        // a placeholder or fabricated asset.
+        products: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { images: true },
+        },
+      },
     });
-    res.json({ items: categories });
+    const items = categories.map(({ products, ...category }) => {
+      const firstImages = Array.isArray(products[0]?.images)
+        ? (products[0]?.images as Array<{ url?: string }>)
+        : [];
+      return { ...category, imageUrl: firstImages[0]?.url || null };
+    });
+    res.json({ items });
   }),
 );
 

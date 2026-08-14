@@ -1,4 +1,5 @@
 import { ArrowRight, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { homeContent } from '@/content/home';
 import { HeroLaptopMockup } from './HeroLaptopMockup';
 import { HeroPhoneMockup } from './HeroPhoneMockup';
@@ -58,13 +59,13 @@ export function HeroSection() {
           </ul>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center lg:mt-7">
-            <a
-              href={hero.primaryCta.href}
+            <Link
+              to={hero.primaryCta.href}
               className="btn-glow inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-gradient px-5 text-sm font-semibold text-white no-underline transition duration-200 lg:h-12 lg:px-6"
             >
               {hero.primaryCta.label}
               <ArrowRight className="h-4 w-4" aria-hidden />
-            </a>
+            </Link>
             <a
               href={hero.secondaryCta.href}
               className="inline-flex h-11 items-center justify-center rounded-xl border border-white/25 bg-transparent px-5 text-sm font-semibold text-white no-underline transition hover:border-white/50 hover:bg-white/5 lg:h-12 lg:px-6"

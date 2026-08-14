@@ -23,7 +23,7 @@ export function SecuritySection() {
   const { security } = homeContent;
 
   return (
-    <section id="security" className="border-y border-slate-200 bg-mist py-16">
+    <section id="security" className="scroll-mt-20 border-y border-slate-200 bg-mist py-16">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <ScrollReveal className="text-center">
           <h2 className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">

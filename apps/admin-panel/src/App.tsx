@@ -19,6 +19,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { SupportPage } from './pages/SupportPage';
 import { UsersPage } from './pages/UsersPage';
+import { TrialLeadsPage } from './pages/TrialLeadsPage';
+import { PricingPage } from './pages/PricingPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +54,8 @@ export default function App() {
                   <Route path="users" element={<UsersPage />} />
                   <Route path="themes" element={<ThemeEditorPage />} />
                   <Route path="themes/:storeId" element={<ThemeEditorPage />} />
+                  <Route path="trial-leads" element={<TrialLeadsPage />} />
+                  <Route path="pricing" element={<PricingPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="licenses" element={<LicensesPage />} />

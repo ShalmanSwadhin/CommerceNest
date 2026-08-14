@@ -13,6 +13,7 @@ import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
 import { storeRouter } from './routes/store.routes.js';
+import { publicRouter } from './routes/public.routes.js';
 import {
   storefrontRootRouter,
   storefrontRouter,
@@ -44,12 +45,25 @@ export function createApp() {
     pinoHttp({
       logger,
       customProps: (req: Request) => ({ requestId: req.requestId }),
+      // pino-http's default req/res serializers log full headers — without
+      // this, every request would write the Authorization bearer token and
+      // the accessToken/refreshToken cookies to stdout/log files in plain
+      // text on every single hit.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'res.headers["set-cookie"]',
+        ],
+        censor: '[redacted]',
+      },
     }),
   );
 
   app.use('/api', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/public', publicRouter);
   app.use('/api/store/:storeId', storeRouter);
   app.use('/api/storefront', storefrontRootRouter);
   app.use('/api/storefront/:storeSlug', storefrontRouter);

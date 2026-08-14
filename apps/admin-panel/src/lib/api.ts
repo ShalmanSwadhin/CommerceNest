@@ -584,4 +584,128 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  // --- Trial leads ---
+  listTrialLeads: (params: Record<string, string | number | undefined> = {}) =>
+    apiRequest<Paginated<TrialLead>>(`/api/admin/trial-leads${toQuery(params)}`),
+  getTrialLead: (id: string) => apiRequest<TrialLead>(`/api/admin/trial-leads/${id}`),
+  extendTrial: (id: string, additionalDays: number) =>
+    apiRequest<TrialLead>(`/api/admin/trial-leads/${id}/extend`, {
+      method: 'POST',
+      body: JSON.stringify({ additionalDays }),
+    }),
+  convertTrial: (id: string, planTier?: string) =>
+    apiRequest<TrialLead>(`/api/admin/trial-leads/${id}/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ planTier }),
+    }),
+  rejectTrial: (id: string, reason?: string) =>
+    apiRequest<TrialLead>(`/api/admin/trial-leads/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // --- Pricing packages ---
+  listPackages: () => apiRequest<{ items: Package[] }>('/api/admin/packages'),
+  createPackage: (body: Record<string, unknown>) =>
+    apiRequest<Package>('/api/admin/packages', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updatePackage: (id: string, body: Record<string, unknown>) =>
+    apiRequest<Package>(`/api/admin/packages/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deletePackage: (id: string) =>
+    apiRequest<{ deactivatedInstead: boolean }>(`/api/admin/packages/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // --- Notifications ---
+  listNotifications: (params: Record<string, string | number | boolean | undefined> = {}) =>
+    apiRequest<{ items: AdminNotification[]; unreadCount: number; total: number }>(
+      `/api/admin/notifications${toQuery(params)}`,
+    ),
+  markNotificationRead: (id: string) =>
+    apiRequest(`/api/admin/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    apiRequest('/api/admin/notifications/read-all', { method: 'POST' }),
+
+  // --- Theme presets (prebuilt layouts) ---
+  listThemePresets: () => apiRequest<{ items: ThemePreset[] }>('/api/admin/theme-presets'),
+  applyThemePreset: (storeId: string, presetId: string) =>
+    apiRequest(`/api/admin/stores/${storeId}/theme/apply-preset`, {
+      method: 'POST',
+      body: JSON.stringify({ presetId }),
+    }),
 };
+
+export interface TrialLead {
+  id: string;
+  prospectName: string;
+  businessName: string;
+  phone: string;
+  email: string;
+  category: string | null;
+  catalogSize: string | null;
+  message: string | null;
+  status: 'LEAD' | 'TRIAL_PENDING' | 'TRIAL_ACTIVE' | 'TRIAL_EXPIRED' | 'CONVERTED' | 'REJECTED';
+  storeId: string | null;
+  trialDurationDays: number | null;
+  rejectionReason: string | null;
+  trialUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  store: {
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    trialStartedAt: string | null;
+    trialExpiresAt: string | null;
+    domains: { hostname: string; isPrimary: boolean }[];
+  } | null;
+  reviewedBy: { id: string; name: string; email: string } | null;
+}
+
+export interface Package {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  monthlyPrice: string;
+  yearlyPrice: string | null;
+  currency: string;
+  active: boolean;
+  featured: boolean;
+  displayOrder: number;
+  maxProducts: number | null;
+  maxStaff: number | null;
+  maxOrders: number | null;
+  storageLimitMb: number | null;
+  features: string[];
+  trialDays: number;
+  customThemeAvailability: 'INCLUDED' | 'ADDITIONAL_CHARGE';
+  supportLevel: string;
+}
+
+export interface AdminNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  storeId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ThemePreset {
+  id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  displayOrder: number;
+  layout: unknown;
+  themeSettings: unknown;
+}

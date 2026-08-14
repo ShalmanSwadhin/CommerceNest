@@ -81,6 +81,14 @@ export type { ModalProps } from './components/Modal';
 export { Pagination } from './components/Pagination';
 export type { PaginationProps } from './components/Pagination';
 
+export { SectionBackground } from './components/SectionBackground';
+export type {
+  SectionBackgroundProps,
+  SectionBackgroundType,
+  SectionBackgroundPosition,
+  SectionOverlayType,
+} from './components/SectionBackground';
+
 export { Skeleton } from './components/Skeleton';
 export type { SkeletonProps } from './components/Skeleton';
 

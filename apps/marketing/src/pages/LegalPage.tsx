@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { BrandLogo } from '@/components/BrandLogo';
 import { SiteFooter } from '@/components/SiteFooter';
+import { usePageMeta } from '@/lib/pageMeta';
 
 type LegalPageProps = {
   title: string;
@@ -8,6 +9,12 @@ type LegalPageProps = {
 };
 
 export function LegalPage({ title, body }: LegalPageProps) {
+  const { pathname } = useLocation();
+  usePageMeta({
+    title: `${title} — CommerceNest`,
+    description: body.slice(0, 155),
+    path: pathname,
+  });
   return (
     <div className="min-h-screen bg-mist">
       <header className="border-b border-slate-200 bg-navy">

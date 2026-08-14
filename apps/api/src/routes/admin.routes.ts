@@ -13,6 +13,10 @@ import * as paymentService from '../services/payment.service.js';
 import * as adminUsersService from '../services/admin-users.service.js';
 import * as announcementService from '../services/announcement.service.js';
 import * as supportService from '../services/support.service.js';
+import * as trialService from '../services/trial.service.js';
+import * as packageService from '../services/package.service.js';
+import * as themePresetService from '../services/theme-preset.service.js';
+import * as notificationService from '../services/notification.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -352,6 +356,169 @@ adminRouter.post(
       typeof req.body?.endReason === 'string' ? req.body.endReason : 'manual',
     );
     res.json(result);
+  }),
+);
+
+// --- Trial leads ---
+adminRouter.get(
+  '/trial-leads',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await trialService.listTrialLeads({
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      }),
+    );
+  }),
+);
+
+adminRouter.get(
+  '/trial-leads/:id',
+  asyncHandler(async (req, res) => {
+    res.json(await trialService.getTrialLead(param(req, 'id')));
+  }),
+);
+
+adminRouter.post(
+  '/trial-leads/:id/extend',
+  asyncHandler(async (req, res) => {
+    const days = z.number().int().min(1).max(90).parse(req.body?.additionalDays);
+    res.json(await trialService.extendTrial(param(req, 'id'), days, actorFrom(req)));
+  }),
+);
+
+adminRouter.post(
+  '/trial-leads/:id/convert',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await trialService.convertTrial(
+        param(req, 'id'),
+        { planTier: typeof req.body?.planTier === 'string' ? req.body.planTier : undefined },
+        actorFrom(req),
+      ),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/trial-leads/:id/reject',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await trialService.rejectTrial(
+        param(req, 'id'),
+        typeof req.body?.reason === 'string' ? req.body.reason : undefined,
+        actorFrom(req),
+      ),
+    );
+  }),
+);
+
+// --- Pricing packages ---
+adminRouter.get(
+  '/packages',
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await packageService.listAllPackages() });
+  }),
+);
+
+adminRouter.post(
+  '/packages',
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await packageService.createPackage(req.body, actorFrom(req)));
+  }),
+);
+
+adminRouter.patch(
+  '/packages/:id',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await packageService.updatePackage(param(req, 'id'), req.body, actorFrom(req)),
+    );
+  }),
+);
+
+adminRouter.delete(
+  '/packages/:id',
+  asyncHandler(async (req, res) => {
+    res.json(await packageService.deletePackage(param(req, 'id'), actorFrom(req)));
+  }),
+);
+
+// --- Notifications (Master Admin inbox) ---
+adminRouter.get(
+  '/notifications',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await notificationService.listNotifications(req.user!.id, {
+        unreadOnly: req.query.unreadOnly === 'true',
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      }),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/notifications/:id/read',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await notificationService.markNotificationRead(req.user!.id, param(req, 'id')),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/notifications/read-all',
+  asyncHandler(async (req, res) => {
+    await notificationService.markAllNotificationsRead(req.user!.id);
+    res.json({ ok: true });
+  }),
+);
+
+// --- Theme presets (prebuilt layouts) ---
+adminRouter.get(
+  '/theme-presets',
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await themePresetService.listThemePresets() });
+  }),
+);
+
+adminRouter.post(
+  '/theme-presets',
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(await themePresetService.createThemePreset(req.body, actorFrom(req)));
+  }),
+);
+
+adminRouter.patch(
+  '/theme-presets/:id',
+  asyncHandler(async (req, res) => {
+    res.json(await themePresetService.updateThemePreset(param(req, 'id'), req.body));
+  }),
+);
+
+adminRouter.delete(
+  '/theme-presets/:id',
+  asyncHandler(async (req, res) => {
+    res.json(await themePresetService.deleteThemePreset(param(req, 'id')));
+  }),
+);
+
+adminRouter.post(
+  '/stores/:id/theme/apply-preset',
+  asyncHandler(async (req, res) => {
+    const presetId = z.string().trim().min(1).parse(req.body?.presetId);
+    res.json(
+      await themePresetService.applyThemePresetToStore(
+        param(req, 'id'),
+        presetId,
+        actorFrom(req),
+      ),
+    );
   }),
 );
 

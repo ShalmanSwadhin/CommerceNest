@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   ExternalLink,
   History,
+  LayoutTemplate,
   Monitor,
   PanelLeft,
   PanelRight,
@@ -37,6 +38,7 @@ import { ErrorState, PageSkeleton } from '../../components/QueryState';
 import { SectionList } from './SectionList';
 import { SectionInspector, type InspectorTab } from './SectionInspector';
 import { ThemeLivePreview } from './ThemeLivePreview';
+import { PrebuiltLayoutsModal } from './PrebuiltLayoutsModal';
 
 type Device = 'desktop' | 'tablet' | 'mobile';
 
@@ -66,6 +68,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
   const [device, setDevice] = useState<Device>('desktop');
   const [publishOpen, setPublishOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [presetGalleryOpen, setPresetGalleryOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('section');
@@ -76,6 +79,12 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
   const [future, setFuture] = useState<ThemeDocument[]>([]);
   const skipHistory = useRef(false);
   const initializedForStore = useRef<string | null>(null);
+  // Lets the stable callbacks below read the current doc without needing
+  // `doc` in their dependency array — that dependency would otherwise make
+  // their identity change on every edit (including colors/typography-only
+  // edits), which defeats SectionList/SectionBlock's memoization.
+  const docRef = useRef(doc);
+  docRef.current = doc;
 
   const themeQ = useQuery({
     queryKey: ['admin', 'theme', storeId],
@@ -219,6 +228,48 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
     [versionsQ.data],
   );
 
+  // Stable references so SectionList/SectionBlock's memoization isn't
+  // defeated by a fresh closure on every render — each reads the latest
+  // doc via docRef instead of closing over `doc` directly.
+  //
+  // These must stay ABOVE the loading-state early return below: hooks must
+  // run unconditionally on every render (Rules of Hooks). Defining them
+  // after the early return meant they were skipped entirely on the first
+  // render (while `doc` was still null) and then suddenly called once the
+  // theme finished loading — "Rendered more hooks than during the previous
+  // render", crashing the Theme Builder on every real load.
+  const handleSelectSection = useCallback((id: string) => {
+    setSelectedId(id);
+    setInspectorTab('section');
+    setRightOpen(true);
+  }, []);
+
+  const handleSectionsChange = useCallback((sections: ThemeSection[]) => {
+    const current = docRef.current;
+    if (!current) return;
+    updateDoc({ ...current, layout: { sections } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleAddSection = useCallback((type: ThemeSectionType) => {
+    const current = docRef.current;
+    if (!current) return;
+    const def = DEFAULT_SECTION_DEFS.find((d) => d.type === type);
+    const section: ThemeSection = {
+      id: newSectionId(type),
+      type,
+      visible: true,
+      settings: { ...(def?.defaultSettings || {}) },
+    };
+    updateDoc({
+      ...current,
+      layout: { sections: [...current.layout.sections, section] },
+    });
+    setSelectedId(section.id);
+    setInspectorTab('section');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (themeQ.isLoading || !doc) return <PageSkeleton />;
   if (themeQ.isError) {
     return (
@@ -257,24 +308,23 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
     });
   };
 
-  const addSection = (type: ThemeSectionType) => {
-    const def = DEFAULT_SECTION_DEFS.find((d) => d.type === type);
-    const section: ThemeSection = {
-      id: newSectionId(type),
-      type,
-      visible: true,
-      settings: { ...(def?.defaultSettings || {}) },
-    };
-    updateDoc({
-      ...doc,
-      layout: { sections: [...doc.layout.sections, section] },
+  const applyPresetToEditor = (draft: ThemeVersion) => {
+    const normalized = normalizeThemeDocument({
+      layout: draft.layout,
+      themeSettings: draft.themeSettings,
     });
-    setSelectedId(section.id);
-    setInspectorTab('section');
+    skipHistory.current = true;
+    setDoc(normalized);
+    setDirty(false);
+    setPast([]);
+    setFuture([]);
+    setSelectedId(normalized.layout.sections[0]?.id ?? null);
+    void qc.invalidateQueries({ queryKey: ['admin', 'theme', storeId] });
+    void qc.invalidateQueries({ queryKey: ['admin', 'theme-versions', storeId] });
   };
 
   return (
-    <div className="flex h-[calc(100vh-0px)] min-h-[640px] flex-col bg-surface-raised">
+    <div className="flex h-full min-h-[640px] flex-col bg-surface-raised">
       {/* Toolbar */}
       <header className="flex flex-wrap items-center gap-2 border-b border-line bg-white px-3 py-2">
         <Button
@@ -331,7 +381,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
               key={key}
               type="button"
               className={`rounded-lg p-2 ${
-                device === key ? 'bg-white text-brand shadow-sm' : 'text-ink-secondary'
+                device === key ? 'bg-white text-primary shadow-sm' : 'text-ink-secondary'
               }`}
               onClick={() => setDevice(key)}
               aria-label={key}
@@ -371,6 +421,14 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
           <Button
             size="sm"
             variant="secondary"
+            leftIcon={<LayoutTemplate className="h-4 w-4" />}
+            onClick={() => setPresetGalleryOpen(true)}
+          >
+            Prebuilt Layouts
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
             leftIcon={<History className="h-4 w-4" />}
             onClick={() => setHistoryOpen(true)}
           >
@@ -391,7 +449,19 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
       </header>
 
       {/* Workspace */}
-      <div className="relative grid min-h-0 flex-1 lg:grid-cols-[260px_1fr_300px]">
+      {/* grid-rows-[minmax(0,1fr)] is load-bearing: a bare `grid` container's
+          implicit row defaults to `auto`, which sizes to the TALLEST grid
+          item's own content height rather than clamping to this container's
+          already-correct `flex-1 min-h-0` height. Without it, the center
+          column (ThemeLivePreview, `min-h-0 overflow-auto`) gets stretched
+          to match its intrinsic content height instead of the available
+          viewport space, so its `overflow-auto` never has anything to
+          scroll — `scrollHeight` silently equals `clientHeight` no matter
+          how tall the real content is, and everything past the fold is
+          just clipped by the outer `h-screen overflow-hidden` shell with no
+          scrollbar anywhere. `minmax(0, 1fr)` forces the row (and every
+          item stretched to it) back down to the container's real height. */}
+      <div className="relative grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[260px_1fr_300px]">
         <aside
           className={`border-r border-line bg-white ${
             leftOpen ? 'block' : 'hidden'
@@ -400,15 +470,9 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
           <SectionList
             sections={doc.layout.sections}
             selectedId={selectedId}
-            onSelect={(id) => {
-              setSelectedId(id);
-              setInspectorTab('section');
-              setRightOpen(true);
-            }}
-            onChange={(sections) =>
-              updateDoc({ ...doc, layout: { sections } })
-            }
-            onAdd={addSection}
+            onSelect={handleSelectSection}
+            onChange={handleSectionsChange}
+            onAdd={handleAddSection}
           />
         </aside>
 
@@ -418,11 +482,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
             device={device}
             storeName={storeName}
             selectedSectionId={selectedId}
-            onSelectSection={(id) => {
-              setSelectedId(id);
-              setInspectorTab('section');
-              setRightOpen(true);
-            }}
+            onSelectSection={handleSelectSection}
           />
         </main>
 
@@ -504,6 +564,14 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
           )}
         </div>
       </Modal>
+
+      <PrebuiltLayoutsModal
+        open={presetGalleryOpen}
+        onClose={() => setPresetGalleryOpen(false)}
+        storeId={storeId}
+        storeName={storeName}
+        onApplied={applyPresetToEditor}
+      />
     </div>
   );
 }

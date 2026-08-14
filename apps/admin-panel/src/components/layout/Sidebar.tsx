@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   BarChart3,
+  BadgeDollarSign,
   CreditCard,
   FileText,
   Headphones,
@@ -8,6 +9,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Palette,
+  Rocket,
   Settings,
   Store,
   Users,
@@ -18,6 +20,8 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/stores', label: 'Stores', icon: Store },
   { to: '/users', label: 'Users', icon: Users },
+  { to: '/trial-leads', label: 'Leads & Trials', icon: Rocket },
+  { to: '/pricing', label: 'Pricing', icon: BadgeDollarSign },
   { to: '/licenses', label: 'Subscriptions', icon: KeyRound },
   { to: '/payments', label: 'Payments', icon: CreditCard },
   { to: '/themes', label: 'Themes', icon: Palette },

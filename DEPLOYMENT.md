@@ -254,7 +254,7 @@ Run API and frontends on host Node — faster hot reload.
 - Storefront Docker image bakes a single `VITE_STORE_SLUG` — multi-tenant subdomains need dynamic slug resolution or SSR (future)
 - Custom domain DNS/SSL automation not implemented
 - No built-in CI/CD pipeline in repo
-- Root `npm run build` fails on `@commercenest/prisma` missing `build` script — build apps individually or use Docker
+- On Windows, `npm run build` can fail regenerating the Prisma client (`EPERM: operation not permitted, rename ... query_engine-windows.dll.node`) if a local dev server (`tsx watch`) is still holding the previously generated engine DLL open. Stop the dev server first, or build in Docker/Linux CI where this file-lock issue doesn't occur.
 - Host machine may not have Docker installed — use dev compose or external managed Postgres/Redis
 
 See [OVERNIGHT_IMPLEMENTATION_REPORT.md](./OVERNIGHT_IMPLEMENTATION_REPORT.md).

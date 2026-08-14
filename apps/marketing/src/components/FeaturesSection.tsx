@@ -23,7 +23,7 @@ export function FeaturesSection() {
   const { features } = homeContent;
 
   return (
-    <section id="features" className="bg-mist py-20 sm:py-24">
+    <section id="features" className="scroll-mt-20 bg-mist py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <ScrollReveal className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand">

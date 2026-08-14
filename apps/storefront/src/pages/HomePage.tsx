@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
 import {
   normalizeThemeDocument,
+  resolveSectionBackground,
   type ThemeSection,
 } from '@commercenest/types/schemas/theme';
-import { Button } from '@commercenest/ui';
+import { Button, SectionBackground } from '@commercenest/ui';
 import {
   extractThemeSettings,
   storefrontApi,
@@ -57,7 +58,7 @@ function renderSection(
   ctx: {
     store: StorefrontStore;
     featured: StorefrontProduct[];
-    categories: { id: string; name: string; slug: string }[];
+    categories: { id: string; name: string; slug: string; imageUrl?: string | null }[];
     primary: string;
     locale: 'en' | 'bn';
   },
@@ -66,23 +67,27 @@ function renderSection(
   const s = section.settings;
 
   if (section.type === 'hero') {
-    const imageUrl = String(s.imageUrl || '');
-    const overlay = Number(s.overlay ?? 45) / 100;
+    const bg = resolveSectionBackground(s);
     const layout = String(s.layout || 'content-left');
     const minH =
       s.height === 'sm' ? 'min-h-[48vh]' : s.height === 'md' ? 'min-h-[60vh]' : 'min-h-[70vh]';
     return (
-      <section
-        key={section.id}
-        className={`relative bg-cover bg-center text-white ${minH}`}
-        style={{
-          backgroundImage: imageUrl
-            ? `linear-gradient(rgba(15,23,42,${overlay}), rgba(15,23,42,${overlay + 0.05})), url(${imageUrl})`
-            : `linear-gradient(135deg, ${ctx.primary}, #0f172a)`,
-        }}
-      >
+      <section key={section.id} className={`relative text-white ${minH}`}>
+        <SectionBackground
+          type={bg.backgroundType}
+          image={bg.image}
+          position={bg.position}
+          color={ctx.primary}
+          gradientFrom={ctx.primary}
+          gradientTo="#0f172a"
+          overlayType={bg.overlayType}
+          overlayColor={bg.overlayColor}
+          overlayOpacity={bg.overlayOpacity}
+          priority
+          className="absolute inset-0"
+        />
         <div
-          className={`mx-auto flex ${minH} max-w-6xl flex-col justify-end px-4 pb-16 pt-24 ${
+          className={`relative mx-auto flex ${minH} max-w-6xl flex-col justify-end px-4 pb-16 pt-24 ${
             layout === 'centered' ? 'items-center text-center' : ''
           }`}
         >
@@ -142,19 +147,38 @@ function renderSection(
           />
         ) : (
           <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6">
-            {cats.map((c) => (
-              <Link
-                key={c.id}
-                to={`/c/${c.slug}`}
-                className="rounded-2xl border border-line bg-white p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div
-                  className="mx-auto mb-2 h-12 w-12 rounded-full"
-                  style={{ background: `${ctx.primary}22` }}
-                />
-                <p className="text-sm font-semibold text-ink">{c.name}</p>
-              </Link>
-            ))}
+            {cats.map((c) =>
+              c.imageUrl ? (
+                <Link
+                  key={c.id}
+                  to={`/c/${c.slug}`}
+                  className="group relative aspect-[4/5] overflow-hidden rounded-2xl shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <img
+                    src={c.imageUrl}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+                  <p className="absolute inset-x-0 bottom-3 text-center text-sm font-semibold text-white">
+                    {c.name}
+                  </p>
+                </Link>
+              ) : (
+                <Link
+                  key={c.id}
+                  to={`/c/${c.slug}`}
+                  className="rounded-2xl border border-line bg-white p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div
+                    className="mx-auto mb-2 h-12 w-12 rounded-full"
+                    style={{ background: `${ctx.primary}22` }}
+                  />
+                  <p className="text-sm font-semibold text-ink">{c.name}</p>
+                </Link>
+              ),
+            )}
           </div>
         )}
       </section>
@@ -194,28 +218,35 @@ function renderSection(
   }
 
   if (section.type === 'promo-banner') {
-    const imageUrl = String(s.imageUrl || '');
+    const bg = resolveSectionBackground(s);
     return (
       <section key={section.id} className="mx-auto max-w-6xl px-4 py-6">
-        <div
-          className="overflow-hidden rounded-3xl px-6 py-12 text-white md:px-10"
-          style={{
-            background: imageUrl
-              ? `linear-gradient(rgba(15,23,42,.45), rgba(15,23,42,.5)), url(${imageUrl}) center/cover`
-              : `linear-gradient(135deg, ${ctx.primary}, #0f172a)`,
-          }}
-        >
-          <h2 className="text-2xl font-bold md:text-3xl">
-            {String(s.heading || 'Special offer')}
-          </h2>
-          <p className="mt-2 max-w-xl text-white/90">
-            {String(s.description || '')}
-          </p>
-          <CtaLink href={String(s.ctaHref || '/c/all')} className="mt-5 inline-block">
-            <Button className="bg-white text-ink hover:bg-slate-100">
-              {String(s.ctaLabel || 'Shop now')}
-            </Button>
-          </CtaLink>
+        <div className="relative overflow-hidden rounded-3xl text-white">
+          <SectionBackground
+            type={bg.backgroundType}
+            image={bg.image}
+            position={bg.position}
+            color={ctx.primary}
+            gradientFrom={ctx.primary}
+            gradientTo="#0f172a"
+            overlayType={bg.overlayType}
+            overlayColor={bg.overlayColor}
+            overlayOpacity={bg.overlayOpacity}
+            className="absolute inset-0"
+          />
+          <div className="relative px-6 py-12 md:px-10">
+            <h2 className="text-2xl font-bold md:text-3xl">
+              {String(s.heading || 'Special offer')}
+            </h2>
+            <p className="mt-2 max-w-xl text-white/90">
+              {String(s.description || '')}
+            </p>
+            <CtaLink href={String(s.ctaHref || '/c/all')} className="mt-5 inline-block">
+              <Button className="bg-white text-ink hover:bg-slate-100">
+                {String(s.ctaLabel || 'Shop now')}
+              </Button>
+            </CtaLink>
+          </div>
         </div>
       </section>
     );
@@ -223,26 +254,89 @@ function renderSection(
 
   if (section.type === 'why-choose-us') {
     const items = Array.isArray(s.items) ? s.items : [];
-    return (
-      <section key={section.id} className="bg-white py-12">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-2xl font-semibold tracking-tight text-ink">
-            {String(s.title || 'Why choose us')}
-          </h2>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {items.map((item, i) => {
-              const row = item as { title?: string; description?: string };
-              return (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-line bg-[#f7f8fb] p-5"
-                >
-                  <p className="font-semibold text-ink">{row.title}</p>
-                  <p className="mt-1 text-sm text-ink-secondary">{row.description}</p>
-                </div>
-              );
-            })}
+    const imageUrl = String(s.imageUrl || '');
+    const imageOnLeft = String(s.imagePosition || 'right') === 'left';
+
+    // No image (the default — matches every theme saved before this
+    // section supported one): unchanged 4-up card grid.
+    if (!imageUrl) {
+      return (
+        <section key={section.id} className="bg-white py-12">
+          <div className="mx-auto max-w-6xl px-4">
+            <h2 className="text-2xl font-semibold tracking-tight text-ink">
+              {String(s.title || 'Why choose us')}
+            </h2>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {items.map((item, i) => {
+                const row = item as { title?: string; description?: string };
+                return (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-line bg-[#f7f8fb] p-5"
+                  >
+                    <p className="font-semibold text-ink">{row.title}</p>
+                    <p className="mt-1 text-sm text-ink-secondary">{row.description}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        </section>
+      );
+    }
+
+    // With an image: an editorial split panel — photo on one side, a
+    // vertical checklist on the other.
+    const checklist = (
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight text-ink md:text-3xl">
+          {String(s.title || 'Why choose us')}
+        </h2>
+        <ul className="mt-6 space-y-4">
+          {items.map((item, i) => {
+            const row = item as { title?: string; description?: string };
+            return (
+              <li key={i} className="flex items-start gap-3">
+                <span
+                  className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-white"
+                  style={{ background: ctx.primary }}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </span>
+                <div>
+                  <p className="font-semibold text-ink">{row.title}</p>
+                  {row.description ? (
+                    <p className="mt-0.5 text-sm text-ink-secondary">{row.description}</p>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+    const photo = (
+      <div className="aspect-[4/5] w-full overflow-hidden rounded-3xl">
+        <img src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+      </div>
+    );
+    return (
+      <section key={section.id} className="bg-white py-12 md:py-16">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 md:grid-cols-2 md:items-center md:gap-12">
+          {imageOnLeft ? (
+            <>
+              {photo}
+              {checklist}
+            </>
+          ) : (
+            <>
+              {checklist}
+              {photo}
+            </>
+          )}
         </div>
       </section>
     );
@@ -250,41 +344,95 @@ function renderSection(
 
   if (section.type === 'testimonials') {
     const items = Array.isArray(s.items) ? s.items : [];
+    const bg = resolveSectionBackground(s);
+    // 'none' (the default, matching every theme saved before this section
+    // supported backgrounds) renders exactly as before: plain page
+    // background, bordered white cards, ink-colored text. Any other choice
+    // is a deliberate dark panel — light cards, white text — matching how
+    // premium storefronts usually present a testimonial slider.
+    const hasBackground = bg.backgroundType !== 'none';
     return (
-      <section key={section.id} className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-2xl font-semibold tracking-tight text-ink">
-          {String(s.title || 'What customers say')}
-        </h2>
-        {s.caption ? (
-          <p className="mt-1 text-xs text-ink-tertiary">{String(s.caption)}</p>
+      <section key={section.id} className="relative overflow-hidden">
+        {hasBackground ? (
+          <SectionBackground
+            type={bg.backgroundType}
+            image={bg.image}
+            position={bg.position}
+            color={ctx.primary}
+            gradientFrom={ctx.primary}
+            gradientTo="#0f172a"
+            overlayType={bg.overlayType}
+            overlayColor={bg.overlayColor}
+            overlayOpacity={bg.overlayOpacity}
+            className="absolute inset-0"
+          />
         ) : null}
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {items.map((item, i) => {
-            const row = item as {
-              quote?: string;
-              name?: string;
-              business?: string;
-              rating?: number;
-            };
-            return (
-              <figure
-                key={i}
-                className="rounded-2xl border border-line bg-white p-5 shadow-sm"
-              >
-                <blockquote className="text-sm text-ink-secondary">
-                  “{row.quote}”
-                </blockquote>
-                <figcaption className="mt-4 text-sm font-semibold text-ink">
-                  {row.name}
-                  {row.business ? (
-                    <span className="block text-xs font-normal text-ink-tertiary">
-                      {row.business}
+        <div
+          className={`relative mx-auto max-w-6xl px-4 ${
+            hasBackground ? 'py-16 text-white' : 'py-12 text-ink'
+          }`}
+        >
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {String(s.title || 'What customers say')}
+          </h2>
+          {s.caption ? (
+            <p
+              className={`mt-1 text-xs ${hasBackground ? 'text-white/70' : 'text-ink-tertiary'}`}
+            >
+              {String(s.caption)}
+            </p>
+          ) : null}
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {items.map((item, i) => {
+              const row = item as {
+                quote?: string;
+                name?: string;
+                business?: string;
+                rating?: number;
+                avatarUrl?: string;
+              };
+              return (
+                <figure
+                  key={i}
+                  className={
+                    hasBackground
+                      ? 'rounded-2xl bg-white/10 p-5 backdrop-blur-sm'
+                      : 'rounded-2xl border border-line bg-white p-5 shadow-sm'
+                  }
+                >
+                  <blockquote
+                    className={`text-sm ${hasBackground ? 'text-white/90' : 'text-ink-secondary'}`}
+                  >
+                    “{row.quote}”
+                  </blockquote>
+                  <figcaption className="mt-4 flex items-center gap-3">
+                    {row.avatarUrl ? (
+                      <img
+                        src={row.avatarUrl}
+                        alt=""
+                        loading="lazy"
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                      />
+                    ) : null}
+                    <span
+                      className={`text-sm font-semibold ${hasBackground ? 'text-white' : 'text-ink'}`}
+                    >
+                      {row.name}
+                      {row.business ? (
+                        <span
+                          className={`block text-xs font-normal ${
+                            hasBackground ? 'text-white/60' : 'text-ink-tertiary'
+                          }`}
+                        >
+                          {row.business}
+                        </span>
+                      ) : null}
                     </span>
-                  ) : null}
-                </figcaption>
-              </figure>
-            );
-          })}
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
         </div>
       </section>
     );
@@ -402,9 +550,11 @@ export function HomePage() {
   );
 }
 
-function unwrapCategories(payload: unknown): { id: string; name: string; slug: string }[] {
+type StorefrontCategory = { id: string; name: string; slug: string; imageUrl?: string | null };
+
+function unwrapCategories(payload: unknown): StorefrontCategory[] {
   if (!payload) return [];
-  if (Array.isArray(payload)) return payload as { id: string; name: string; slug: string }[];
+  if (Array.isArray(payload)) return payload as StorefrontCategory[];
   const obj = payload as { data?: unknown[]; items?: unknown[] };
-  return (obj.data || obj.items || []) as { id: string; name: string; slug: string }[];
+  return (obj.data || obj.items || []) as StorefrontCategory[];
 }

@@ -156,6 +156,20 @@ enum RefundMethod {
   STORE_CREDIT
 }
 
+enum TrialLeadStatus {
+  LEAD
+  TRIAL_PENDING
+  TRIAL_ACTIVE
+  TRIAL_EXPIRED
+  CONVERTED
+  REJECTED
+}
+
+enum CustomThemeAvailability {
+  INCLUDED
+  ADDITIONAL_CHARGE
+}
+
 // ---------------------------------------------------------------------------
 // Staff & platform identity
 // ---------------------------------------------------------------------------
@@ -186,6 +200,7 @@ model User {
   notifications            Notification[]
   supportTicketsRequested  SupportTicket[]        @relation("SupportTicketRequester")
   supportReplies           SupportReply[]         @relation("SupportReplyAuthor")
+  trialLeadsReviewed       TrialLead[]            @relation("TrialLeadReviewer")
 
   @@index([storeId])
   @@index([phone])
@@ -215,6 +230,9 @@ model Store {
   shippingInsideDhaka   Decimal  @db.Decimal(12, 2) @default(60)
   shippingOutsideDhaka  Decimal  @db.Decimal(12, 2) @default(120)
   freeShippingThreshold Decimal? @db.Decimal(12, 2)
+  isTrial            Boolean     @default(false)
+  trialStartedAt     DateTime?
+  trialExpiresAt     DateTime?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
@@ -242,10 +260,12 @@ model Store {
   coupons            Coupon[]
   couponRedemptions  CouponRedemption[]
   returnRequests     ReturnRequest[]
+  trialLead          TrialLead?
 
   @@index([status])
   @@index([ownerUserId])
   @@index([createdAt])
+  @@index([isTrial, trialExpiresAt])
   @@map("stores")
 }
 
@@ -532,9 +552,20 @@ model StorefrontVersion {
   @@map("storefront_versions")
 }
 
+/**
+ * Reusable layout+themeSettings snapshots. Platform-curated "prebuilt
+ * layouts" (isPreset: true) are the source of the Master Admin's
+ * "Prebuilt Layouts" gallery; the same model can also hold ad-hoc saved
+ * templates sourced from a specific store, which is why sourceStoreId
+ * predates the preset feature and stays optional.
+ */
 model Template {
   id            String   @id @default(cuid())
   name          String
+  category      String?
+  description   String?  @db.Text
+  isPreset      Boolean  @default(false)
+  displayOrder  Int      @default(0)
   sourceStoreId String?
   layout        Json
   themeSettings Json
@@ -545,6 +576,7 @@ model Template {
   createdBy   User   @relation("TemplateCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([createdById])
+  @@index([isPreset, displayOrder])
   @@map("templates")
 }
 
@@ -818,4 +850,79 @@ model ReturnRequest {
   @@index([storeId, status])
   @@index([orderId])
   @@map("return_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Pricing packages
+// ---------------------------------------------------------------------------
+
+/**
+ * Master Admin-managed pricing plans. `Store.planTier` stores a Package's
+ * `slug` by convention (kept a loose string, not a hard FK, so existing
+ * stores never break if a package is renamed/removed — subscription.service
+ * falls back to sane defaults when no matching Package row exists).
+ */
+model Package {
+  id                      String                   @id @default(cuid())
+  name                    String
+  slug                    String                   @unique
+  description             String?                  @db.Text
+  monthlyPrice            Decimal                  @db.Decimal(12, 2)
+  yearlyPrice             Decimal?                 @db.Decimal(12, 2)
+  currency                String                   @default("BDT")
+  active                  Boolean                  @default(true)
+  featured                Boolean                  @default(false)
+  displayOrder            Int                      @default(0)
+  maxProducts             Int?
+  maxStaff                Int?
+  maxOrders               Int?
+  storageLimitMb          Int?
+  features                Json                     @default("[]")
+  trialDays               Int                      @default(7)
+  customThemeAvailability CustomThemeAvailability  @default(ADDITIONAL_CHARGE)
+  supportLevel            String                   @default("basic")
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  @@index([active, displayOrder])
+  @@map("packages")
+}
+
+// ---------------------------------------------------------------------------
+// Trial leads
+// ---------------------------------------------------------------------------
+
+/**
+ * A prospect's trial/demo request. Deliberately separate from Store — most
+ * leads never become a store (rejected/never provisioned), and a lead's
+ * lifecycle (LEAD → TRIAL_PENDING → ... → CONVERTED/REJECTED) doesn't map
+ * onto StoreStatus, which describes an existing tenant's operational state.
+ * Once a trial store is provisioned, storeId links the two; Store carries
+ * the actual trialStartedAt/trialExpiresAt used to gate storefront access.
+ */
+model TrialLead {
+  id                String           @id @default(cuid())
+  prospectName      String
+  businessName      String
+  phone             String
+  email             String
+  category          String?
+  catalogSize       String?
+  message           String?          @db.Text
+  status            TrialLeadStatus  @default(LEAD)
+  storeId           String?          @unique
+  trialDurationDays Int?
+  rejectionReason   String?          @db.Text
+  reviewedById      String?
+  reviewedAt        DateTime?
+  lastActivityAt    DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  store      Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  reviewedBy User?  @relation("TrialLeadReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("trial_leads")
 }

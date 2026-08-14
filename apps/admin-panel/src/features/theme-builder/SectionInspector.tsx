@@ -59,6 +59,157 @@ function ColorRow({
   );
 }
 
+const BACKGROUND_OPTIONS = [
+  ['gradient', 'Gradient'],
+  ['color', 'Color'],
+  ['image', 'Image'],
+] as const;
+
+/** Sections that predate background support (testimonials) default to
+ * "None" — a real, distinct "no background layer" choice — rather than
+ * Gradient, so applying this control never reskins an existing theme. */
+const BACKGROUND_OPTIONS_WITH_NONE = [
+  ['none', 'None'],
+  ...BACKGROUND_OPTIONS,
+] as const;
+
+const POSITION_OPTIONS = [
+  ['center', 'Center'],
+  ['top', 'Top'],
+  ['bottom', 'Bottom'],
+  ['left', 'Left'],
+  ['right', 'Right'],
+] as const;
+
+const OVERLAY_OPTIONS = [
+  ['none', 'None'],
+  ['dark', 'Dark'],
+  ['light', 'Light'],
+  ['custom', 'Custom color'],
+] as const;
+
+/**
+ * Shared background controls for any section that supports a photographic
+ * background (Hero, Promotional Banner, and future image-enabled sections).
+ * Reuses the existing MediaImageField media selector rather than a new
+ * upload control, and only shows image-specific fields once "Image" is
+ * actually selected — a merchant editing a plain color/gradient section
+ * never sees position/overlay controls that don't apply to them.
+ */
+function BackgroundModeFields({
+  storeId,
+  settings,
+  onPatch,
+  allowNone = false,
+}: {
+  storeId: string;
+  settings: Record<string, unknown>;
+  onPatch: (key: string, value: unknown) => void;
+  /** Sections that predate background support (testimonials) need a real
+   * "no background" option so applying this control can't reskin an
+   * existing theme the first time it reaches an old section. */
+  allowNone?: boolean;
+}) {
+  const backgroundType = String(
+    settings.backgroundType ||
+      (settings.imageUrl ? 'image' : allowNone ? 'none' : 'gradient'),
+  );
+  const overlayType = String(
+    settings.overlayType || (backgroundType === 'image' ? 'dark' : 'none'),
+  );
+  const options = allowNone ? BACKGROUND_OPTIONS_WITH_NONE : BACKGROUND_OPTIONS;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-surface-raised/40 p-3">
+      <FormField label="Background">
+        <div className={`grid gap-1.5 ${allowNone ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          {options.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`rounded-lg border px-2 py-2 text-xs font-semibold transition ${
+                backgroundType === value
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-line text-ink-secondary hover:bg-white'
+              }`}
+              onClick={() => onPatch('backgroundType', value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </FormField>
+
+      {backgroundType === 'image' && (
+        <>
+          <MediaImageField
+            storeId={storeId}
+            label="Background image"
+            value={String(settings.imageUrl || '')}
+            usageType="STORE_BANNER"
+            onChange={(url) => onPatch('imageUrl', url)}
+          />
+          <FormField label="Image position">
+            <select
+              className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+              value={String(settings.backgroundPosition || 'center')}
+              onChange={(e) => onPatch('backgroundPosition', e.target.value)}
+            >
+              {POSITION_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Overlay">
+            <select
+              className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+              value={overlayType}
+              onChange={(e) => onPatch('overlayType', e.target.value)}
+            >
+              {OVERLAY_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          {overlayType === 'custom' && (
+            <FormField label="Overlay color">
+              <span className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={String(settings.overlayColor || '#0B1023')}
+                  onChange={(e) => onPatch('overlayColor', e.target.value)}
+                  className="h-8 w-10 cursor-pointer rounded border border-line bg-transparent"
+                />
+                <Input
+                  value={String(settings.overlayColor || '#0B1023')}
+                  onChange={(e) => onPatch('overlayColor', e.target.value)}
+                  className="w-[96px] font-mono text-xs"
+                />
+              </span>
+            </FormField>
+          )}
+          {overlayType !== 'none' && (
+            <FormField label={`Overlay opacity ${numberOrDefault(settings.overlay, 45)}%`}>
+              <input
+                type="range"
+                min={0}
+                max={90}
+                value={numberOrDefault(settings.overlay, 45)}
+                onChange={(e) => onPatch('overlay', Number(e.target.value))}
+                className="w-full"
+              />
+            </FormField>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SectionInspector({
   storeId,
   tab,
@@ -120,7 +271,7 @@ export function SectionInspector({
             type="button"
             className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
               tab === t.id
-                ? 'bg-brand text-white'
+                ? 'bg-primary text-white'
                 : 'text-ink-secondary hover:bg-surface-raised'
             }`}
             onClick={() => onTabChange(t.id)}
@@ -205,25 +356,11 @@ export function SectionInspector({
                     }
                   />
                 </FormField>
-                <MediaImageField
+                <BackgroundModeFields
                   storeId={storeId}
-                  label="Hero image"
-                  value={String(section.settings.imageUrl || '')}
-                  usageType="STORE_BANNER"
-                  onChange={(url) => patchSectionSetting('imageUrl', url)}
+                  settings={section.settings}
+                  onPatch={patchSectionSetting}
                 />
-                <FormField label={`Overlay ${numberOrDefault(section.settings.overlay, 45)}%`}>
-                  <input
-                    type="range"
-                    min={0}
-                    max={80}
-                    value={numberOrDefault(section.settings.overlay, 45)}
-                    onChange={(e) =>
-                      patchSectionSetting('overlay', Number(e.target.value))
-                    }
-                    className="w-full"
-                  />
-                </FormField>
                 <FormField label="Height">
                   <select
                     className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
@@ -306,12 +443,10 @@ export function SectionInspector({
                     onChange={(e) => patchSectionSetting('ctaLabel', e.target.value)}
                   />
                 </FormField>
-                <MediaImageField
+                <BackgroundModeFields
                   storeId={storeId}
-                  label="Banner image"
-                  value={String(section.settings.imageUrl || '')}
-                  usageType="STORE_BANNER"
-                  onChange={(url) => patchSectionSetting('imageUrl', url)}
+                  settings={section.settings}
+                  onPatch={patchSectionSetting}
                 />
               </div>
             )}
@@ -347,11 +482,49 @@ export function SectionInspector({
                     </FormField>
                   </>
                 )}
+                {section.type === 'why-choose-us' && (
+                  <>
+                    <MediaImageField
+                      storeId={storeId}
+                      label="Side image (optional)"
+                      value={String(section.settings.imageUrl || '')}
+                      usageType="STORE_BANNER"
+                      onChange={(url) => patchSectionSetting('imageUrl', url)}
+                    />
+                    {section.settings.imageUrl ? (
+                      <FormField label="Image position">
+                        <select
+                          className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+                          value={String(section.settings.imagePosition || 'right')}
+                          onChange={(e) =>
+                            patchSectionSetting('imagePosition', e.target.value)
+                          }
+                        >
+                          <option value="right">Image on right</option>
+                          <option value="left">Image on left</option>
+                        </select>
+                      </FormField>
+                    ) : (
+                      <p className="text-xs text-ink-tertiary">
+                        Add a photo to switch from the 4-card grid to an editorial
+                        split layout with a checklist.
+                      </p>
+                    )}
+                  </>
+                )}
                 {section.type === 'testimonials' && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Quotes are sample/demo content for layout preview — not real
-                    customer reviews.
-                  </p>
+                  <>
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Quotes are sample/demo content for layout preview — not real
+                      customer reviews.
+                    </p>
+                    <BackgroundModeFields
+                      storeId={storeId}
+                      settings={section.settings}
+                      onPatch={patchSectionSetting}
+                      allowNone
+                    />
+                  </>
                 )}
               </div>
             )}

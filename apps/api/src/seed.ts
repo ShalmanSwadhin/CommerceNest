@@ -13,6 +13,7 @@ config({ path: path.join(repoRoot, '.env') });
 config();
 
 import {
+  CustomThemeAvailability,
   PaymentMethod,
   PaymentStatus,
   ProductStatus,
@@ -20,9 +21,11 @@ import {
   UserRole,
   UserStatus,
 } from '@commercenest/types';
+import { normalizeThemeDocument } from '@commercenest/types/schemas/theme';
 import { prisma } from './lib/prisma.js';
 import { hashPassword } from './lib/password.js';
 import { env } from './lib/env.js';
+import { THEME_PRESETS } from './seed-data/theme-presets.js';
 
 async function upsertStoreBundle(opts: {
   name: string;
@@ -204,6 +207,31 @@ async function ensureCustomer(
 }
 
 async function main() {
+  // This script creates demo stores/products/orders and, by default, a
+  // Master Admin with a well-known password (Admin123!). Running it against
+  // a real production database is exactly the kind of "dev convenience
+  // value used in production" that must be impossible by accident.
+  if (env.NODE_ENV === 'production') {
+    if (process.env.ALLOW_PROD_SEED !== 'true') {
+      console.error(
+        '[seed] Refusing to run: NODE_ENV=production. This script creates demo stores/orders and ' +
+          'defaults to a well-known admin password (Admin123!) — it must never touch a real database. ' +
+          'If you genuinely need to bootstrap the first Master Admin in production, set ' +
+          'ALLOW_PROD_SEED=true and a strong SEED_ADMIN_PASSWORD, and be aware the demo stores/' +
+          'products/orders will still be created alongside it.',
+      );
+      process.exit(1);
+    }
+    const prodPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!prodPassword || prodPassword === 'Admin123!') {
+      console.error(
+        '[seed] ALLOW_PROD_SEED=true requires SEED_ADMIN_PASSWORD to be set to a strong, ' +
+          'non-default value (not "Admin123!").',
+      );
+      process.exit(1);
+    }
+  }
+
   console.log('Seeding CommerceNest…');
 
   const adminEmail =
@@ -529,6 +557,135 @@ async function main() {
     create: { key: 'platform.name', value: 'CommerceNest' },
     update: { value: 'CommerceNest' },
   });
+
+  await prisma.platformSettings.upsert({
+    where: { key: 'trial.defaultDurationDays' },
+    create: { key: 'trial.defaultDurationDays', value: 7 },
+    update: {},
+  });
+
+  // Pricing packages — Bangladesh-focused starting defaults, fully editable
+  // by Master Admin afterward via /admin/packages.
+  const packageSeeds = [
+    {
+      name: 'Starter',
+      slug: 'starter',
+      description: 'For small and new businesses getting started online.',
+      monthlyPrice: 499,
+      displayOrder: 1,
+      maxProducts: 50,
+      maxStaff: 3,
+      maxOrders: null as number | null,
+      storageLimitMb: 500,
+      trialDays: 7,
+      customThemeAvailability: CustomThemeAvailability.ADDITIONAL_CHARGE,
+      supportLevel: 'basic',
+      featured: false,
+      features: [
+        'Storefront & product catalog',
+        'Basic theme',
+        'Cash on delivery',
+        'Manual bKash payments',
+        'Basic order management',
+        'Basic analytics',
+        'Customer management',
+        'Basic support',
+      ],
+    },
+    {
+      name: 'Business',
+      slug: 'business',
+      description: 'For growing businesses that need more room and more tools.',
+      monthlyPrice: 999,
+      displayOrder: 2,
+      maxProducts: 500,
+      maxStaff: 10,
+      maxOrders: null as number | null,
+      storageLimitMb: 2000,
+      trialDays: 7,
+      customThemeAvailability: CustomThemeAvailability.ADDITIONAL_CHARGE,
+      supportLevel: 'priority',
+      featured: true,
+      features: [
+        'Everything in Starter',
+        'More products & staff seats',
+        'Coupons & discounts',
+        'Advanced analytics',
+        'Returns & refunds',
+        'CMS tools',
+        'Priority support',
+      ],
+    },
+    {
+      name: 'Pro',
+      slug: 'pro',
+      description: 'For established businesses that want the full CommerceNest experience.',
+      monthlyPrice: 1999,
+      displayOrder: 3,
+      maxProducts: null as number | null,
+      maxStaff: null as number | null,
+      maxOrders: null as number | null,
+      storageLimitMb: 10000,
+      trialDays: 7,
+      customThemeAvailability: CustomThemeAvailability.INCLUDED,
+      supportLevel: 'priority',
+      featured: false,
+      features: [
+        'Everything in Business',
+        'Unlimited products & staff',
+        'Advanced storefront customization service',
+        'Custom theme service included',
+        'Priority support',
+        'Advanced analytics',
+      ],
+    },
+  ];
+
+  for (const pkg of packageSeeds) {
+    await prisma.package.upsert({
+      where: { slug: pkg.slug },
+      create: { ...pkg, currency: 'BDT', active: true },
+      update: {},
+    });
+  }
+
+  // Prebuilt theme layouts — seeded once; Master Admin can edit/add more
+  // from the Prebuilt Layouts gallery afterward.
+  for (const preset of THEME_PRESETS) {
+    const exists = await prisma.template.findFirst({
+      where: { name: preset.name, isPreset: true },
+    });
+    if (exists) continue;
+
+    const normalized = normalizeThemeDocument({
+      layout: {
+        sections: preset.sections.map((s, index) => ({
+          id: `${s.type}_seed_${index}`,
+          type: s.type,
+          visible: true,
+          settings: s.settings ?? {},
+        })),
+      },
+      themeSettings: {
+        colors: preset.colors,
+        typography: { preset: preset.typographyPreset },
+        header: { style: preset.headerStyle },
+      },
+    });
+
+    await prisma.template.create({
+      data: {
+        name: preset.name,
+        category: preset.category,
+        description: preset.description,
+        displayOrder: preset.displayOrder,
+        isPreset: true,
+        layout: normalized.layout as never,
+        themeSettings: normalized.themeSettings as never,
+        createdById: admin.id,
+      },
+    });
+  }
 
   for (const store of [tech.store, rahim.store, urban.store]) {
     await prisma.cmsContentBlock.upsert({

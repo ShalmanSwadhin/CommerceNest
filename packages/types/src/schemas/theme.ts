@@ -155,6 +155,10 @@ export const DEFAULT_SECTION_DEFS: {
       secondaryCtaLabel: '',
       secondaryCtaHref: '',
       imageUrl: '',
+      backgroundType: 'gradient',
+      backgroundPosition: 'center',
+      overlayType: 'none',
+      overlayColor: '#0B1023',
       overlay: 45,
       textAlign: 'left',
       height: 'lg',
@@ -191,6 +195,10 @@ export const DEFAULT_SECTION_DEFS: {
       ctaLabel: 'Shop deals',
       ctaHref: '/c/all',
       imageUrl: '',
+      backgroundType: 'gradient',
+      backgroundPosition: 'center',
+      overlayType: 'none',
+      overlayColor: '#0B1023',
       overlay: 40,
     },
   },
@@ -211,6 +219,8 @@ export const DEFAULT_SECTION_DEFS: {
     label: 'Why Choose Us',
     defaultSettings: {
       title: 'Why shop with us',
+      imageUrl: '',
+      imagePosition: 'right',
       items: [
         { title: 'Authentic Products', description: 'Sourced from trusted suppliers' },
         { title: 'Fast Delivery', description: 'Nationwide shipping across Bangladesh' },
@@ -225,6 +235,12 @@ export const DEFAULT_SECTION_DEFS: {
     defaultSettings: {
       title: 'What customers say',
       caption: 'Illustrative sample quotes for preview',
+      imageUrl: '',
+      backgroundType: 'none',
+      backgroundPosition: 'center',
+      overlayType: 'none',
+      overlayColor: '#0B1023',
+      overlay: 60,
       items: [
         {
           quote: 'Smooth checkout with bKash and great product quality.',
@@ -258,6 +274,75 @@ export function createDefaultSections(): ThemeSection[] {
     visible: true,
     settings: { ...def.defaultSettings },
   }));
+}
+
+export type ResolvedSectionBackground = {
+  /**
+   * `'none'` is distinct from `'color'`: it means "no background layer at
+   * all — let the page's own background show through," which is what
+   * sections that predate this system (e.g. testimonials) always looked
+   * like. `'color'` is a real, visible solid-fill choice (the theme's
+   * primary color). Collapsing the two would either misrepresent
+   * `'color'` as a no-op or silently reskin every pre-existing section the
+   * first time this system reached it.
+   */
+  backgroundType: 'none' | 'color' | 'gradient' | 'image';
+  image: string;
+  position: 'center' | 'top' | 'bottom' | 'left' | 'right';
+  overlayType: 'none' | 'dark' | 'light' | 'custom';
+  overlayColor: string;
+  overlayOpacity: number;
+};
+
+const BACKGROUND_TYPES = ['none', 'color', 'gradient', 'image'] as const;
+const BACKGROUND_POSITIONS = ['center', 'top', 'bottom', 'left', 'right'] as const;
+const OVERLAY_TYPES = ['none', 'dark', 'light', 'custom'] as const;
+
+function numberOrDefault(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isNaN(n) ? fallback : n;
+}
+
+/**
+ * Resolves a section's background settings into a fully-defaulted shape —
+ * shared by the Theme Builder preview, the SectionInspector editor, and the
+ * real storefront so all three agree on exactly what should render.
+ *
+ * Backward compatible by construction: a section saved before `backgroundType`
+ * existed only ever had `imageUrl` (+ a numeric `overlay`, always applied
+ * whenever an image was set). Inferring `backgroundType`/`overlayType` from
+ * `imageUrl` when they're absent reproduces that exact old visual result, so
+ * no migration or explicit backfill is needed for existing themes.
+ */
+export function resolveSectionBackground(
+  settings: Record<string, unknown>,
+): ResolvedSectionBackground {
+  const image = String(settings.imageUrl ?? '');
+
+  const rawType = settings.backgroundType;
+  const backgroundType = (BACKGROUND_TYPES as readonly string[]).includes(rawType as string)
+    ? (rawType as ResolvedSectionBackground['backgroundType'])
+    : image
+      ? 'image'
+      : 'gradient';
+
+  const rawPosition = settings.backgroundPosition;
+  const position = (BACKGROUND_POSITIONS as readonly string[]).includes(rawPosition as string)
+    ? (rawPosition as ResolvedSectionBackground['position'])
+    : 'center';
+
+  const rawOverlayType = settings.overlayType;
+  const overlayType = (OVERLAY_TYPES as readonly string[]).includes(rawOverlayType as string)
+    ? (rawOverlayType as ResolvedSectionBackground['overlayType'])
+    : backgroundType === 'image'
+      ? 'dark'
+      : 'none';
+
+  const overlayColor = String(settings.overlayColor || '#0B1023');
+  const overlayOpacity = numberOrDefault(settings.overlay, 45);
+
+  return { backgroundType, image, position, overlayType, overlayColor, overlayOpacity };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -42,6 +42,18 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
+  // Callers overwhelmingly pass `onClose={() => ...}` as an inline closure,
+  // so its identity changes on every render of the parent — including
+  // renders triggered by keystrokes in a controlled input inside this modal.
+  // Routing it through a ref (instead of the effect's dependency array)
+  // keeps the mount/focus-trap effect below from tearing down and
+  // re-running on every keystroke, which was stealing focus to the first
+  // focusable element (the close button) after each typed character.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   const trapFocus = useCallback((event: KeyboardEvent) => {
     if (event.key !== 'Tab' || !dialogRef.current) return;
 
@@ -76,7 +88,7 @@ export function Modal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
       trapFocus(event);
     };
@@ -89,7 +101,7 @@ export function Modal({
       document.body.style.overflow = '';
       previousFocusRef.current?.focus();
     };
-  }, [open, onClose, trapFocus]);
+  }, [open, trapFocus]);
 
   if (!open) return null;
 

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { BrandLogo } from './BrandLogo';
+import { NavAnchorLink } from './NavAnchorLink';
 import { homeContent } from '@/content/home';
 import { supportEmail } from '@/lib/urls';
 
@@ -32,34 +33,25 @@ export function SiteFooter() {
             <ul className="mt-4 space-y-2.5">
               {column.links.map((link) => (
                 <li key={link.label}>
-                  {link.href.startsWith('/') ? (
-                    <Link
-                      to={link.href}
-                      className="text-sm text-slate-400 no-underline transition hover:text-white"
-                    >
-                      {link.label}
-                    </Link>
-                  ) : (
-                    <a
-                      href={link.href}
-                      className="text-sm text-slate-400 no-underline transition hover:text-white"
-                    >
-                      {link.label}
-                    </a>
-                  )}
+                  <NavAnchorLink
+                    href={link.href}
+                    className="text-sm text-slate-400 no-underline transition hover:text-white"
+                  >
+                    {link.label}
+                  </NavAnchorLink>
                 </li>
               ))}
             </ul>
           </div>
         ))}
 
-        <div className="lg:col-span-2" id="resources">
+        <div className="lg:col-span-2">
           <h3 className="text-sm font-bold text-white">Support</h3>
           <ul className="mt-4 space-y-2.5 text-sm text-slate-400">
             <li>
-              <a href="#contact" className="no-underline transition hover:text-white">
+              <NavAnchorLink href="#contact" className="no-underline transition hover:text-white">
                 Contact form
-              </a>
+              </NavAnchorLink>
             </li>
             <li>Bangladesh</li>
             {email ? (

@@ -47,11 +47,22 @@ const storefrontCheckoutSchema = checkoutSchema
     }
   });
 
+function isTrialExpired(store: { isTrial: boolean; trialExpiresAt: Date | null }) {
+  return Boolean(store.isTrial && store.trialExpiresAt && store.trialExpiresAt < new Date());
+}
+
 /**
  * Resolve a public storefront by slug.
  * Allows PENDING_SETUP (pre-launch preview); blocks SUSPENDED/ARCHIVED.
+ * An expired trial store blocks every storefront action by default (no
+ * browsing, no checkout) — pass allowExpiredTrial for the two "entry"
+ * endpoints (summary/home) that need to render a professional trial-expired
+ * page instead of a bare error.
  */
-async function resolveStoreBySlug(storeSlug: string) {
+async function resolveStoreBySlug(
+  storeSlug: string,
+  opts: { allowExpiredTrial?: boolean } = {},
+) {
   const store = await prisma.store.findUnique({
     where: { slug: storeSlug },
     include: {
@@ -63,6 +74,12 @@ async function resolveStoreBySlug(storeSlug: string) {
   });
   if (!store || store.status === 'ARCHIVED' || store.status === 'SUSPENDED') {
     throw AppError.notFound('Store not found');
+  }
+  if (!opts.allowExpiredTrial && isTrialExpired(store)) {
+    throw AppError.forbidden(
+      'This trial store has expired.',
+      'TRIAL_EXPIRED',
+    );
   }
   return store;
 }
@@ -88,7 +105,8 @@ function publicCustomer(customer: {
 
 /** Store summary for storefront shell (published theme only). */
 export async function getStorefrontSummary(storeSlug: string) {
-  const store = await resolveStoreBySlug(storeSlug);
+  const store = await resolveStoreBySlug(storeSlug, { allowExpiredTrial: true });
+  const trialExpired = isTrialExpired(store);
   const published = store.storefront?.publishedVersion ?? null;
   const primary = store.domains[0] ?? null;
 
@@ -101,17 +119,21 @@ export async function getStorefrontSummary(storeSlug: string) {
     category: store.category,
     bkashNumber: store.bkashNumber,
     bkashInstructions: store.bkashInstructions,
-    themeSettings: published?.themeSettings ?? null,
+    themeSettings: trialExpired ? null : published?.themeSettings ?? null,
     primaryHostname: primary?.hostname ?? null,
+    isTrial: store.isTrial,
+    trialExpired,
   };
 }
 
 export async function getStorefrontHome(storeSlug: string) {
-  const store = await resolveStoreBySlug(storeSlug);
+  const store = await resolveStoreBySlug(storeSlug, { allowExpiredTrial: true });
+  const trialExpired = isTrialExpired(store);
 
-  // Catalog only when store is ACTIVE — never fall back to draft theme
+  // Catalog only when store is ACTIVE and not an expired trial — never fall
+  // back to draft theme.
   const featured =
-    store.status === StoreStatus.ACTIVE
+    store.status === StoreStatus.ACTIVE && !trialExpired
       ? await prisma.product.findMany({
           where: { storeId: store.id, status: ProductStatus.ACTIVE },
           include: { variants: true },
@@ -132,15 +154,18 @@ export async function getStorefrontHome(storeSlug: string) {
       category: store.category,
       bkashNumber: store.bkashNumber,
       bkashInstructions: store.bkashInstructions,
+      isTrial: store.isTrial,
+      trialExpired,
     },
-    theme: published
-      ? {
-          layout: published.layout,
-          themeSettings: published.themeSettings,
-          versionNumber: published.versionNumber,
-          status: published.status,
-        }
-      : null,
+    theme:
+      published && !trialExpired
+        ? {
+            layout: published.layout,
+            themeSettings: published.themeSettings,
+            versionNumber: published.versionNumber,
+            status: published.status,
+          }
+        : null,
     featuredProducts: featured,
   };
 }

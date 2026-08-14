@@ -27,7 +27,7 @@ export function ContactSection() {
   }
 
   return (
-    <section id="contact" className="bg-white py-20 sm:py-24">
+    <section id="contact" className="scroll-mt-20 bg-white py-20 sm:py-24">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
         <ScrollReveal>
           <h2 className="text-3xl font-extrabold tracking-tight text-ink">

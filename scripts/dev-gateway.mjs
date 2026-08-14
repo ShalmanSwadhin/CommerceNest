@@ -190,6 +190,11 @@ const server = http.createServer((req, res) => {
 
 // WebSocket upgrade for Vite HMR
 server.on('upgrade', (req, socket, head) => {
+  // Without this, an abruptly-closed client connection (browser navigating
+  // away, closing a tab, a headless-browser session ending) emits 'error'
+  // on this socket with no listener attached, which crashes the whole
+  // gateway process with an uncaught ECONNRESET.
+  socket.on('error', () => socket.destroy());
   const host = req.headers.host || 'localhost';
   const hostname = host.split(':')[0] || 'localhost';
   const pathname = (req.url || '/').split('?')[0] || '/';
@@ -218,6 +223,7 @@ server.on('upgrade', (req, socket, head) => {
         '\r\n\r\n',
     );
     if (proxyHead?.length) socket.write(proxyHead);
+    proxySocket.on('error', () => socket.destroy());
     proxySocket.pipe(socket);
     socket.pipe(proxySocket);
   });

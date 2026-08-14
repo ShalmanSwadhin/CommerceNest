@@ -2,6 +2,7 @@ import { Avatar, Button } from '@commercenest/ui';
 import { LogOut, Menu } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { adminApi } from '../../lib/api';
+import { NotificationBell } from './NotificationBell';
 
 export function Navbar({
   title,
@@ -38,6 +39,7 @@ export function Navbar({
         <h1 className="truncate text-sm font-semibold text-ink">{title || 'Overview'}</h1>
       </div>
       <div className="flex items-center gap-3">
+        <NotificationBell />
         <div className="hidden text-right sm:block">
           <div className="text-sm font-medium text-ink">{user?.name}</div>
           <div className="text-xs text-ink-secondary">{user?.email}</div>

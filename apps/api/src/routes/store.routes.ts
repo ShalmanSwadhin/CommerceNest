@@ -641,7 +641,13 @@ storeRouter.patch(
   }),
 );
 
-// Theme current (published + draft)
+// Theme — READ ONLY for store staff. Theme customization is a Master
+// Admin-managed paid service (see SECURITY.md#theme-permission-model):
+// merchants can view their current theme (for the "Theme & Design" info
+// page) but cannot create drafts, publish, list version history, or roll
+// back. All mutation endpoints below are Master Admin only — enforced here
+// server-side, not just hidden in the UI, so a malicious Store Admin token
+// gets a 403 even calling the API directly.
 storeRouter.get(
   '/theme/current',
   asyncHandler(async (req, res) => {
@@ -651,7 +657,7 @@ storeRouter.get(
 
 storeRouter.put(
   '/theme/draft',
-  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  requireRoles(UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     res.json(
       await themeService.saveDraftTheme(scopedStoreId(req), req.body, req.user!.id),
@@ -661,7 +667,7 @@ storeRouter.put(
 
 storeRouter.post(
   '/theme/publish',
-  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  requireRoles(UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     res.json(await themeService.publishTheme(scopedStoreId(req), actor(req)));
   }),
@@ -669,7 +675,7 @@ storeRouter.post(
 
 storeRouter.get(
   '/theme/versions',
-  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  requireRoles(UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     res.json(await themeService.listThemeVersions(scopedStoreId(req)));
   }),
@@ -677,12 +683,37 @@ storeRouter.get(
 
 storeRouter.post(
   '/theme/versions/:versionId/restore',
-  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  requireRoles(UserRole.MASTER_ADMIN),
   asyncHandler(async (req, res) => {
     res.json(
       await themeService.restoreThemeVersion(
         scopedStoreId(req),
         param(req, 'versionId'),
+        actor(req),
+      ),
+    );
+  }),
+);
+
+// Request theme customization — routes into the existing store support-ticket
+// system so Master Admin sees it in the same queue as other merchant requests.
+storeRouter.post(
+  '/theme/customization-request',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  rateLimit({ windowSeconds: 3600, max: 5, keyPrefix: 'rl:theme-customization-request' }),
+  asyncHandler(async (req, res) => {
+    const message =
+      typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    res.status(201).json(
+      await supportService.createSupportTicket(
+        scopedStoreId(req),
+        {
+          subject: 'Theme customization request',
+          priority: 'NORMAL',
+          body:
+            message ||
+            'Merchant requested custom theme design service via the Theme & Design page.',
+        },
         actor(req),
       ),
     );
