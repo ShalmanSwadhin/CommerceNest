@@ -311,7 +311,7 @@ export function TrialLeadsPage() {
                   href={detail.trialUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-1 block break-all font-mono text-xs text-brand hover:underline"
+                  className="mt-1 block break-all font-mono text-xs text-primary hover:underline"
                 >
                   {detail.trialUrl}
                 </a>
@@ -325,7 +325,7 @@ export function TrialLeadsPage() {
             ) : null}
             <a
               href={`mailto:${detail.email}`}
-              className="inline-block text-xs font-semibold text-brand hover:underline"
+              className="inline-block text-xs font-semibold text-primary hover:underline"
             >
               Contact lead by email
             </a>

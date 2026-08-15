@@ -179,9 +179,9 @@ export function MediaImageField({
             const file = e.dataTransfer.files?.[0];
             if (file) void registerFile(file);
           }}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-brand/30 bg-brand/[0.03] px-4 py-8 text-center transition hover:border-brand/50 hover:bg-brand/[0.06] disabled:opacity-60"
+          className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-primary/30 bg-primary/[0.03] px-4 py-8 text-center transition hover:border-primary/50 hover:bg-primary/[0.06] disabled:opacity-60"
         >
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-brand/10 text-brand">
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary">
             <Upload className="h-5 w-5" />
           </span>
           <span className="text-sm font-semibold text-ink">

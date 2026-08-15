@@ -6,6 +6,7 @@ import { HowItWorksSection } from '@/components/HowItWorksSection';
 import { BangladeshSection } from '@/components/BangladeshSection';
 import { StatsSection } from '@/components/StatsSection';
 import { TestimonialsSection } from '@/components/TestimonialsSection';
+import { PricingSection } from '@/components/PricingSection';
 import { SecuritySection } from '@/components/SecuritySection';
 import { FaqSection } from '@/components/FaqSection';
 import { FinalCTA } from '@/components/FinalCTA';
@@ -33,6 +34,7 @@ export function HomePage() {
         <BangladeshSection />
         <StatsSection />
         <TestimonialsSection />
+        <PricingSection />
         <SecuritySection />
         <FaqSection />
         <FinalCTA />

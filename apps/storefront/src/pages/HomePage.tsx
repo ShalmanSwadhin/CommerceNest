@@ -1,8 +1,10 @@
+import type { CSSProperties } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
 import {
   normalizeThemeDocument,
+  resolveDesignSystem,
   resolveSectionBackground,
   type ThemeSection,
 } from '@commercenest/types/schemas/theme';
@@ -20,6 +22,28 @@ import { useLocaleStore } from '../stores/localeStore';
 import { ProductCard } from '../components/ProductCard';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
 import { CtaLink } from '../lib/ctaLink';
+
+/**
+ * Renders a section's primary CTA per the store's Design System button-style
+ * token. These CTAs sit on a photo/gradient background, so the baseline
+ * ("solid") look has always been a white pill — outline/ghost keep that same
+ * context in mind (light-on-dark) rather than assuming a plain page background.
+ */
+function primaryCtaClass(buttonStyle: 'solid' | 'outline' | 'ghost'): string {
+  if (buttonStyle === 'outline') {
+    return 'border-2 border-white bg-transparent text-white hover:bg-white/10';
+  }
+  if (buttonStyle === 'ghost') {
+    return 'border-0 bg-transparent text-white underline-offset-4 hover:underline';
+  }
+  return 'bg-white text-ink hover:bg-slate-100';
+}
+
+/** Design-system radius/shadow tokens as an inline style, for card containers. */
+const cardTokenStyle: CSSProperties = {
+  borderRadius: 'var(--store-radius, 16px)',
+  boxShadow: 'var(--store-shadow, 0 1px 3px rgba(15,23,42,0.08))',
+};
 
 function ProductGrid({
   products,
@@ -61,6 +85,7 @@ function renderSection(
     categories: { id: string; name: string; slug: string; imageUrl?: string | null }[];
     primary: string;
     locale: 'en' | 'bn';
+    buttonStyle: 'solid' | 'outline' | 'ghost';
   },
 ) {
   if (!section.visible) return null;
@@ -112,7 +137,7 @@ function renderSection(
             }`}
           >
             <CtaLink href={String(s.primaryCtaHref || '/c/all')}>
-              <Button size="lg" className="bg-white text-ink hover:bg-slate-100">
+              <Button size="lg" className={primaryCtaClass(ctx.buttonStyle)}>
                 {String(s.primaryCtaLabel || t(ctx.locale, 'shop'))}
               </Button>
             </CtaLink>
@@ -152,7 +177,8 @@ function renderSection(
                 <Link
                   key={c.id}
                   to={`/c/${c.slug}`}
-                  className="group relative aspect-[4/5] overflow-hidden rounded-2xl shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className="group relative aspect-[4/5] overflow-hidden transition hover:-translate-y-0.5"
+                  style={cardTokenStyle}
                 >
                   <img
                     src={c.imageUrl}
@@ -169,7 +195,8 @@ function renderSection(
                 <Link
                   key={c.id}
                   to={`/c/${c.slug}`}
-                  className="rounded-2xl border border-line bg-white p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className="border border-line bg-white p-4 text-center transition hover:-translate-y-0.5"
+                  style={cardTokenStyle}
                 >
                   <div
                     className="mx-auto mb-2 h-12 w-12 rounded-full"
@@ -221,7 +248,7 @@ function renderSection(
     const bg = resolveSectionBackground(s);
     return (
       <section key={section.id} className="mx-auto max-w-6xl px-4 py-6">
-        <div className="relative overflow-hidden rounded-3xl text-white">
+        <div className="relative overflow-hidden text-white" style={cardTokenStyle}>
           <SectionBackground
             type={bg.backgroundType}
             image={bg.image}
@@ -242,7 +269,7 @@ function renderSection(
               {String(s.description || '')}
             </p>
             <CtaLink href={String(s.ctaHref || '/c/all')} className="mt-5 inline-block">
-              <Button className="bg-white text-ink hover:bg-slate-100">
+              <Button className={primaryCtaClass(ctx.buttonStyle)}>
                 {String(s.ctaLabel || 'Shop now')}
               </Button>
             </CtaLink>
@@ -272,7 +299,8 @@ function renderSection(
                 return (
                   <div
                     key={i}
-                    className="rounded-2xl border border-line bg-[#f7f8fb] p-5"
+                    className="border border-line bg-[#f7f8fb] p-5"
+                    style={cardTokenStyle}
                   >
                     <p className="font-semibold text-ink">{row.title}</p>
                     <p className="mt-1 text-sm text-ink-secondary">{row.description}</p>
@@ -319,7 +347,7 @@ function renderSection(
       </div>
     );
     const photo = (
-      <div className="aspect-[4/5] w-full overflow-hidden rounded-3xl">
+      <div className="aspect-[4/5] w-full overflow-hidden" style={cardTokenStyle}>
         <img src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
       </div>
     );
@@ -394,11 +422,8 @@ function renderSection(
               return (
                 <figure
                   key={i}
-                  className={
-                    hasBackground
-                      ? 'rounded-2xl bg-white/10 p-5 backdrop-blur-sm'
-                      : 'rounded-2xl border border-line bg-white p-5 shadow-sm'
-                  }
+                  className={hasBackground ? 'bg-white/10 p-5 backdrop-blur-sm' : 'border border-line bg-white p-5'}
+                  style={hasBackground ? { borderRadius: 'var(--store-radius, 16px)' } : cardTokenStyle}
                 >
                   <blockquote
                     className={`text-sm ${hasBackground ? 'text-white/90' : 'text-ink-secondary'}`}
@@ -442,8 +467,8 @@ function renderSection(
     return (
       <section key={section.id} className="mx-auto max-w-6xl px-4 py-8">
         <div
-          className="rounded-3xl px-6 py-10 text-white md:px-10"
-          style={{ background: ctx.primary }}
+          className="px-6 py-10 text-white md:px-10"
+          style={{ background: ctx.primary, borderRadius: 'var(--store-radius, 16px)' }}
         >
           <h2 className="text-2xl font-bold">{String(s.title || 'Stay in the loop')}</h2>
           <p className="mt-2 max-w-xl text-white/90">
@@ -459,7 +484,7 @@ function renderSection(
               placeholder="you@email.com"
               className="h-11 flex-1 rounded-xl border-0 px-3 text-sm text-ink"
             />
-            <Button type="submit" className="bg-white text-ink hover:bg-slate-100">
+            <Button type="submit" className={primaryCtaClass(ctx.buttonStyle)}>
               {String(s.buttonText || 'Subscribe')}
             </Button>
           </form>
@@ -516,6 +541,7 @@ export function HomePage() {
   });
   const featured = data.featuredProducts || [];
   const primary = doc.themeSettings.colors.primary || themeConfig.primaryColor || '#6C1DB3';
+  const { buttonStyle } = resolveDesignSystem(doc.themeSettings);
   const categories = unwrapCategories(catsQ.data);
   const description =
     data.store.tagline || `Shop ${data.store.name} online with delivery across Bangladesh.`;
@@ -544,6 +570,7 @@ export function HomePage() {
           categories,
           primary,
           locale,
+          buttonStyle,
         }),
       )}
     </div>

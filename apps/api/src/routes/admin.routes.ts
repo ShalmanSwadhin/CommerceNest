@@ -542,7 +542,8 @@ adminRouter.put(
 adminRouter.post(
   '/stores/:id/theme/publish',
   asyncHandler(async (req, res) => {
-    res.json(await themeService.publishTheme(param(req, 'id'), actorFrom(req)));
+    const label = typeof req.body?.label === 'string' ? req.body.label : undefined;
+    res.json(await themeService.publishTheme(param(req, 'id'), actorFrom(req), label));
   }),
 );
 

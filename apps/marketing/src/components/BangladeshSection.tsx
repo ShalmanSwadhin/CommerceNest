@@ -1,9 +1,8 @@
-import { Link } from 'react-router-dom';
 import { homeContent } from '@/content/home';
 import { ScrollReveal } from './ScrollReveal';
 
 export function BangladeshSection() {
-  const { bangladesh, themesTeaser, pricingTeaser } = homeContent;
+  const { bangladesh, themesTeaser } = homeContent;
 
   return (
     <section id={bangladesh.id} className="scroll-mt-20 bg-white py-20 sm:py-24">
@@ -57,30 +56,16 @@ export function BangladeshSection() {
           </ScrollReveal>
         </div>
 
-        <div className="mt-16 grid gap-6 lg:grid-cols-2">
+        <div className="mt-16">
           <ScrollReveal>
-            <div id={themesTeaser.id} className="scroll-mt-20 rounded-2xl border border-slate-200 bg-mist p-8">
+            <div
+              id={themesTeaser.id}
+              className="scroll-mt-20 rounded-2xl border border-slate-200 bg-mist p-8 text-center sm:p-10"
+            >
               <h3 className="text-xl font-bold text-ink">{themesTeaser.title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
+              <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-ink-secondary">
                 {themesTeaser.supporting}
               </p>
-            </div>
-          </ScrollReveal>
-          <ScrollReveal delayMs={60}>
-            <div
-              id={pricingTeaser.id}
-              className="scroll-mt-20 rounded-2xl border border-brand/20 bg-brand/5 p-8"
-            >
-              <h3 className="text-xl font-bold text-ink">{pricingTeaser.title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
-                {pricingTeaser.supporting}
-              </p>
-              <Link
-                to={pricingTeaser.cta.href}
-                className="mt-5 inline-flex text-sm font-semibold text-brand no-underline hover:underline"
-              >
-                {pricingTeaser.cta.label} →
-              </Link>
             </div>
           </ScrollReveal>
         </div>

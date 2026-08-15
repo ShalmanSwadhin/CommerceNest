@@ -135,7 +135,7 @@ export function ThemePage() {
 
       <Card elevated padding="lg" className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
+          <div className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>

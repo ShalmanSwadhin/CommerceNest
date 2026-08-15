@@ -9,6 +9,7 @@ import { writeAuditLog } from './audit.service.js';
 const saveDraftSchema = z.object({
   layout: z.unknown(),
   themeSettings: z.unknown(),
+  label: z.string().trim().max(120).optional(),
 });
 
 export async function getDraftTheme(storeId: string) {
@@ -62,12 +63,17 @@ export async function saveDraftTheme(
   });
   const storefront = await getDraftTheme(storeId);
 
+  // Empty string clears an existing label; undefined (the field simply
+  // wasn't sent) leaves whatever label is already on the draft untouched.
+  const labelUpdate = data.label !== undefined ? { label: data.label || null } : {};
+
   if (storefront.draftVersionId && storefront.draftVersion) {
     return prisma.storefrontVersion.update({
       where: { id: storefront.draftVersionId },
       data: {
         layout: normalized.layout as Prisma.InputJsonValue,
         themeSettings: normalized.themeSettings as Prisma.InputJsonValue,
+        ...labelUpdate,
       },
     });
   }
@@ -86,6 +92,7 @@ export async function saveDraftTheme(
       layout: normalized.layout as Prisma.InputJsonValue,
       themeSettings: normalized.themeSettings as Prisma.InputJsonValue,
       createdById: actorId,
+      label: data.label || null,
     },
   });
 
@@ -100,6 +107,7 @@ export async function saveDraftTheme(
 export async function publishTheme(
   storeId: string,
   actor: { id: string; role: string; ip?: string; userAgent?: string },
+  label?: string,
 ) {
   const storefront = await getDraftTheme(storeId);
   if (!storefront.draftVersion) {
@@ -107,6 +115,7 @@ export async function publishTheme(
   }
 
   const previousVersionId = storefront.publishedVersionId;
+  const trimmedLabel = label?.trim().slice(0, 120);
 
   const result = await prisma.$transaction(async (tx) => {
     if (previousVersionId) {
@@ -121,6 +130,7 @@ export async function publishTheme(
       data: {
         status: 'PUBLISHED',
         publishedAt: new Date(),
+        ...(trimmedLabel ? { label: trimmedLabel } : {}),
       },
     });
 

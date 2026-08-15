@@ -1,10 +1,20 @@
 import { memo, useCallback } from 'react';
 import {
+  resolveDesignSystem,
   resolveSectionBackground,
+  type ResolvedDesignSystem,
   type ThemeDocument,
   type ThemeSection,
 } from '@commercenest/types/schemas/theme';
 import { SectionBackground } from '@commercenest/ui';
+
+/** Design-system button-style token → concrete classes for a CTA that sits on
+ * a photo/gradient background (matches the storefront's own `primaryCtaClass`). */
+function primaryCtaClass(buttonStyle: ResolvedDesignSystem['buttonStyle']): string {
+  if (buttonStyle === 'outline') return 'border border-white/70 bg-transparent text-white';
+  if (buttonStyle === 'ghost') return 'bg-transparent text-white underline-offset-2 underline';
+  return 'bg-white text-slate-900';
+}
 
 type Device = 'desktop' | 'tablet' | 'mobile';
 
@@ -34,12 +44,14 @@ type ThemeLivePreviewProps = {
 const SectionBlock = memo(function SectionBlock({
   section,
   colors,
+  designSystem,
   storeName,
   selected,
   onSelect,
 }: {
   section: ThemeSection;
   colors: ThemeDocument['themeSettings']['colors'];
+  designSystem: ResolvedDesignSystem;
   storeName: string;
   selected: boolean;
   onSelect?: (id: string) => void;
@@ -48,6 +60,7 @@ const SectionBlock = memo(function SectionBlock({
   const s = section.settings;
   const ring = selected ? 'ring-2 ring-[#6C1DB3] ring-offset-2' : '';
   const handleSelect = () => onSelect?.(section.id);
+  const cardStyle = { borderRadius: designSystem.radiusPx, boxShadow: designSystem.shadowCss };
 
   if (section.type === 'hero') {
     const layout = String(s.layout || 'content-left');
@@ -89,7 +102,7 @@ const SectionBlock = memo(function SectionBlock({
             {String(s.subtitle || 'Supporting text for your campaign')}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">
+            <span className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${primaryCtaClass(designSystem.buttonStyle)}`}>
               {String(s.primaryCtaLabel || 'Shop Now')}
             </span>
             {s.secondaryCtaLabel ? (
@@ -157,7 +170,7 @@ const SectionBlock = memo(function SectionBlock({
             <div
               key={i}
               className="overflow-hidden border bg-white"
-              style={{ borderColor: colors.border, borderRadius: 12 }}
+              style={{ borderColor: colors.border, ...cardStyle }}
             >
               <div className="aspect-square" style={{ background: `${colors.primary}18` }} />
               <div className="p-2">
@@ -181,7 +194,8 @@ const SectionBlock = memo(function SectionBlock({
       <button
         type="button"
         onClick={handleSelect}
-        className={`relative mx-6 my-4 block w-[calc(100%-3rem)] overflow-hidden rounded-2xl text-left text-white ${ring}`}
+        className={`relative mx-6 my-4 block w-[calc(100%-3rem)] overflow-hidden text-left text-white ${ring}`}
+        style={{ borderRadius: designSystem.radiusPx }}
       >
         <SectionBackground
           type={bg.backgroundType}
@@ -198,7 +212,7 @@ const SectionBlock = memo(function SectionBlock({
         <div className="relative px-6 py-10">
           <h3 className="text-xl font-bold">{String(s.heading || 'Promo')}</h3>
           <p className="mt-1 text-sm text-white/85">{String(s.description || '')}</p>
-          <span className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">
+          <span className={`mt-3 inline-flex rounded-lg px-3 py-1.5 text-xs font-semibold ${primaryCtaClass(designSystem.buttonStyle)}`}>
             {String(s.ctaLabel || 'Shop now')}
           </span>
         </div>
@@ -220,7 +234,7 @@ const SectionBlock = memo(function SectionBlock({
             {items.slice(0, 4).map((item, i) => {
               const row = item as { title?: string; description?: string };
               return (
-                <div key={i} className="rounded-xl border p-3" style={{ borderColor: colors.border }}>
+                <div key={i} className="border p-3" style={{ borderColor: colors.border, borderRadius: designSystem.radiusPx }}>
                   <p className="text-sm font-bold" style={{ color: colors.text }}>
                     {row.title}
                   </p>
@@ -260,7 +274,10 @@ const SectionBlock = memo(function SectionBlock({
       </div>
     );
     const photo = (
-      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-cover bg-center" style={{ backgroundImage: `url(${imageUrl})` }} />
+      <div
+        className="aspect-[4/3] w-full overflow-hidden bg-cover bg-center"
+        style={{ backgroundImage: `url(${imageUrl})`, borderRadius: designSystem.radiusPx }}
+      />
     );
     return (
       <button type="button" onClick={handleSelect} className={`w-full bg-white px-6 py-8 text-left ${ring}`}>
@@ -314,8 +331,12 @@ const SectionBlock = memo(function SectionBlock({
               return (
                 <div
                   key={i}
-                  className={hasBackground ? 'rounded-xl bg-white/10 p-3 backdrop-blur-sm' : 'rounded-xl border bg-white p-3'}
-                  style={hasBackground ? undefined : { borderColor: colors.border }}
+                  className={hasBackground ? 'bg-white/10 p-3 backdrop-blur-sm' : 'border bg-white p-3'}
+                  style={
+                    hasBackground
+                      ? { borderRadius: designSystem.radiusPx }
+                      : { borderColor: colors.border, ...cardStyle }
+                  }
                 >
                   <p
                     className="text-xs leading-relaxed"
@@ -343,8 +364,8 @@ const SectionBlock = memo(function SectionBlock({
       <button
         type="button"
         onClick={handleSelect}
-        className={`mx-6 my-6 w-[calc(100%-3rem)] rounded-2xl px-6 py-8 text-left text-white ${ring}`}
-        style={{ background: colors.primary }}
+        className={`mx-6 my-6 w-[calc(100%-3rem)] px-6 py-8 text-left text-white ${ring}`}
+        style={{ background: colors.primary, borderRadius: designSystem.radiusPx }}
       >
         <h3 className="text-lg font-bold">{String(s.title || 'Newsletter')}</h3>
         <p className="mt-1 text-sm text-white/85">{String(s.subtitle || '')}</p>
@@ -352,7 +373,7 @@ const SectionBlock = memo(function SectionBlock({
           <span className="flex-1 rounded-lg bg-white/15 px-3 py-2 text-xs text-white/70">
             you@email.com
           </span>
-          <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-900">
+          <span className={`rounded-lg px-3 py-2 text-xs font-semibold ${primaryCtaClass(designSystem.buttonStyle)}`}>
             {String(s.buttonText || 'Subscribe')}
           </span>
         </div>
@@ -376,6 +397,7 @@ export function ThemeLivePreview({
   const header = themeSettings.header;
   const footer = themeSettings.footer;
   const radius = String(themeSettings.cornerRadius || 12);
+  const designSystem = resolveDesignSystem(themeSettings);
   // Stable across renders so SectionBlock's memoization isn't defeated by a
   // fresh closure every time (colors/typography edits shouldn't force every
   // section to redo its JSX construction).
@@ -400,8 +422,18 @@ export function ThemeLivePreview({
           maxWidth: widths[device],
           borderRadius: 16,
           fontFamily: themeSettings.typography.bodyFont,
+          fontWeight: themeSettings.typography.bodyWeight,
+          ['--preview-heading-font' as string]:
+            themeSettings.typography.headingFont || themeSettings.typography.bodyFont,
+          ['--preview-heading-weight' as string]: themeSettings.typography.headingWeight,
         }}
       >
+        <style>{`
+          h1, h2, h3 {
+            font-family: var(--preview-heading-font) !important;
+            font-weight: var(--preview-heading-weight) !important;
+          }
+        `}</style>
         {branding.announcement ? (
           <div
             className="px-3 py-1.5 text-center text-[11px] text-white"
@@ -445,6 +477,7 @@ export function ThemeLivePreview({
             key={section.id}
             section={section}
             colors={colors}
+            designSystem={designSystem}
             storeName={storeName}
             selected={selectedSectionId === section.id}
             onSelect={handleSelectSection}

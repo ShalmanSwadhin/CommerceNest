@@ -52,7 +52,7 @@ export const homeContent = {
   nav: [
     { id: 'features', label: 'Features', href: '#features' },
     { id: 'themes', label: 'Themes', href: '#themes' },
-    { id: 'pricing', label: 'Pricing', href: '/pricing' },
+    { id: 'pricing', label: 'Pricing', href: '#pricing' },
     { id: 'how-it-works', label: 'How It Works', href: '#how-it-works' },
     { id: 'about', label: 'About', href: '#about' },
     { id: 'contact', label: 'Contact', href: '#contact' },
@@ -408,7 +408,7 @@ export const homeContent = {
         links: [
           { label: 'Features', href: '#features' },
           { label: 'Themes', href: '#themes' },
-          { label: 'Pricing', href: '/pricing' },
+          { label: 'Pricing', href: '#pricing' },
           { label: 'Security', href: '#security' },
           { label: 'Start Free Trial', href: '/trial' },
         ],

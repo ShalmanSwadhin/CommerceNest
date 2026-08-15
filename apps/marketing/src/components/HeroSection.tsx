@@ -1,23 +1,52 @@
 import { ArrowRight, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { homeContent } from '@/content/home';
 import { HeroLaptopMockup } from './HeroLaptopMockup';
 import { HeroPhoneMockup } from './HeroPhoneMockup';
 
+const container = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } },
+};
+const staggerItem = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.21, 0.47, 0.32, 0.98] } },
+};
+
 export function HeroSection() {
   const { hero } = homeContent;
+  const reduce = useReducedMotion();
 
   return (
     <section className="relative overflow-hidden bg-navy pb-14 pt-6 sm:pb-16 sm:pt-8 lg:pb-20 lg:pt-10">
       <div className="pointer-events-none absolute inset-0 bg-hero-radial" />
-      <div className="pointer-events-none absolute right-[-10%] top-[8%] h-[420px] w-[420px] rounded-full bg-[#6C1DB3]/30 blur-[100px]" />
-      <div className="pointer-events-none absolute bottom-[10%] left-[20%] h-[260px] w-[260px] rounded-full bg-[#A855F7]/15 blur-[90px]" />
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute right-[-10%] top-[8%] h-[420px] w-[420px] rounded-full bg-[#6C1DB3]/30 blur-[100px]"
+        animate={reduce ? undefined : { x: [0, -24, 0], y: [0, 18, 0] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute bottom-[10%] left-[20%] h-[260px] w-[260px] rounded-full bg-[#A855F7]/15 blur-[90px]"
+        animate={reduce ? undefined : { x: [0, 20, 0], y: [0, -16, 0] }}
+        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+      />
 
       {/* Desktop: text LEFT · mockups RIGHT (first viewport). Mobile: text then devices. */}
       <div className="relative mx-auto grid max-w-6xl items-start gap-8 px-4 sm:px-6 md:grid-cols-[1fr_1.05fr] md:gap-6 lg:gap-10 lg:px-8 xl:max-w-7xl xl:gap-12">
-        {/* LEFT — copy */}
-        <div className="animate-fade-up relative z-10 md:pt-2">
-          <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200">
+        {/* LEFT — copy, staggered entrance */}
+        <motion.div
+          variants={reduce ? undefined : container}
+          initial={reduce ? undefined : 'hidden'}
+          animate={reduce ? undefined : 'show'}
+          className="relative z-10 md:pt-2"
+        >
+          <motion.div
+            variants={reduce ? undefined : staggerItem}
+            className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200"
+          >
             <span className="relative flex h-2 w-2 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
@@ -32,19 +61,28 @@ export function HeroSection() {
               </svg>
             </span>
             <span className="min-w-0 leading-snug">{hero.badge}</span>
-          </div>
+          </motion.div>
 
-          <h1 className="mt-4 text-[2rem] font-extrabold leading-[1.08] tracking-tight text-white sm:mt-5 sm:text-4xl md:text-[2.35rem] lg:text-[3rem] xl:text-[3.35rem]">
+          <motion.h1
+            variants={reduce ? undefined : staggerItem}
+            className="mt-4 text-[2rem] font-extrabold leading-[1.08] tracking-tight text-white sm:mt-5 sm:text-4xl md:text-[2.35rem] lg:text-[3rem] xl:text-[3.35rem]"
+          >
             {hero.headlineLead}{' '}
             <span className="text-gradient-brand">{hero.headlineEmphasis}</span>
             <br className="hidden sm:block" /> {hero.headlineTrail}
-          </h1>
+          </motion.h1>
 
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
+          <motion.p
+            variants={reduce ? undefined : staggerItem}
+            className="mt-4 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg"
+          >
             {hero.supporting}
-          </p>
+          </motion.p>
 
-          <ul className="mt-5 space-y-2.5 lg:mt-6 lg:space-y-3">
+          <motion.ul
+            variants={reduce ? undefined : staggerItem}
+            className="mt-5 space-y-2.5 lg:mt-6 lg:space-y-3"
+          >
             {hero.bullets.map((item) => (
               <li
                 key={item}
@@ -56,25 +94,32 @@ export function HeroSection() {
                 <span>{item}</span>
               </li>
             ))}
-          </ul>
+          </motion.ul>
 
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center lg:mt-7">
-            <Link
-              to={hero.primaryCta.href}
-              className="btn-glow inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-gradient px-5 text-sm font-semibold text-white no-underline transition duration-200 lg:h-12 lg:px-6"
-            >
-              {hero.primaryCta.label}
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
-            <a
+          <motion.div
+            variants={reduce ? undefined : staggerItem}
+            className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center lg:mt-7"
+          >
+            <motion.div whileHover={reduce ? undefined : { scale: 1.03 }} whileTap={reduce ? undefined : { scale: 0.98 }}>
+              <Link
+                to={hero.primaryCta.href}
+                className="btn-glow relative inline-flex h-11 items-center justify-center gap-2 overflow-hidden rounded-xl bg-brand-gradient px-5 text-sm font-semibold text-white no-underline transition duration-200 lg:h-12 lg:px-6"
+              >
+                {hero.primaryCta.label}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </motion.div>
+            <motion.a
+              whileHover={reduce ? undefined : { scale: 1.03 }}
+              whileTap={reduce ? undefined : { scale: 0.98 }}
               href={hero.secondaryCta.href}
               className="inline-flex h-11 items-center justify-center rounded-xl border border-white/25 bg-transparent px-5 text-sm font-semibold text-white no-underline transition hover:border-white/50 hover:bg-white/5 lg:h-12 lg:px-6"
             >
               {hero.secondaryCta.label}
-            </a>
-          </div>
+            </motion.a>
+          </motion.div>
 
-          <div className="mt-6 flex items-center gap-3 lg:mt-7">
+          <motion.div variants={reduce ? undefined : staggerItem} className="mt-6 flex items-center gap-3 lg:mt-7">
             <div className="flex -space-x-2" aria-hidden>
               {['AH', 'RA', 'NJ', 'SK'].map((initials, i) => (
                 <span
@@ -96,8 +141,8 @@ export function HeroSection() {
               </div>
               <p className="text-xs text-slate-400 sm:text-sm">{hero.trustLine}</p>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* RIGHT — laptop + phone, top-aligned beside headline */}
         <div className="relative mx-auto w-full max-w-[520px] pb-20 pt-2 md:max-w-none md:pb-24 md:pt-1 lg:pb-28">

@@ -96,6 +96,22 @@ export const themeButtonsSchema = z.object({
   primaryShadow: z.boolean().default(true),
 });
 
+/**
+ * Theme Builder Pro V2 — Global Design System (tokens). Deliberately small:
+ * `radius` is NOT duplicated here — it reuses the existing top-level
+ * `cornerRadius` setting, which has been configurable since before Pro
+ * existed but had no real visual effect anywhere in the renderer (a
+ * pre-existing gap this feature closes). `shadow`/`buttonStyle` are new.
+ * Defaults reproduce the exact hardcoded look every section already had, so
+ * existing themes render identically until a merchant opens the new Pro
+ * Design System panel and changes something.
+ */
+export const themeDesignSystemSchema = z.object({
+  shadow: z.enum(['none', 'subtle', 'medium', 'strong']).default('subtle'),
+  buttonStyle: z.enum(['solid', 'outline', 'ghost']).default('solid'),
+});
+export type ThemeDesignSystem = z.infer<typeof themeDesignSystemSchema>;
+
 export const themeBrandingSchema = z.object({
   logoUrl: z.string().default(''),
   faviconUrl: z.string().default(''),
@@ -111,6 +127,7 @@ export const themeSettingsSchema = z.object({
   footer: themeFooterSchema.default({}),
   productCard: themeProductCardSchema.default({}),
   buttons: themeButtonsSchema.default({}),
+  designSystem: themeDesignSystemSchema.default({}),
   cornerRadius: z.union([z.string(), z.number()]).default('12'),
   // Legacy flat keys kept for older drafts (mirrored by normalize)
   primaryColor: z.string().optional(),
@@ -345,6 +362,52 @@ export function resolveSectionBackground(
   return { backgroundType, image, position, overlayType, overlayColor, overlayOpacity };
 }
 
+export type ResolvedDesignSystem = {
+  radiusPx: number;
+  shadowCss: string;
+  buttonStyle: 'solid' | 'outline' | 'ghost';
+};
+
+const SHADOW_CSS: Record<ThemeDesignSystem['shadow'], string> = {
+  none: 'none',
+  subtle: '0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04)',
+  medium: '0 8px 24px rgba(15,23,42,0.12)',
+  strong: '0 20px 40px rgba(15,23,42,0.20)',
+};
+
+/**
+ * Resolves the store-wide design tokens (radius/shadow/button style) into
+ * concrete, render-ready values — shared by the real storefront (StoreShell/
+ * ProductCard/HomePage), the Theme Builder Pro canvas (ThemeLivePreview),
+ * and the Pro Design System panel, so all three agree on exactly what a
+ * given theme document produces. `radiusPx` reuses the pre-existing
+ * `cornerRadius` setting rather than introducing a second radius field.
+ */
+export function resolveDesignSystem(
+  themeSettings: Partial<ThemeSettingsV2> & Record<string, unknown>,
+): ResolvedDesignSystem {
+  const rawRadius = themeSettings.cornerRadius;
+  const parsedRadius = Number(rawRadius);
+  const radiusPx = Number.isFinite(parsedRadius) ? parsedRadius : 12;
+
+  const ds = asRecord(themeSettings.designSystem) || {};
+  const shadowRaw = ds.shadow;
+  const shadow = (['none', 'subtle', 'medium', 'strong'] as const).includes(
+    shadowRaw as 'none',
+  )
+    ? (shadowRaw as ThemeDesignSystem['shadow'])
+    : 'subtle';
+
+  const buttonStyleRaw = ds.buttonStyle;
+  const buttonStyle = (['solid', 'outline', 'ghost'] as const).includes(
+    buttonStyleRaw as 'solid',
+  )
+    ? (buttonStyleRaw as ThemeDesignSystem['buttonStyle'])
+    : 'solid';
+
+  return { radiusPx, shadowCss: SHADOW_CSS[shadow], buttonStyle };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -373,9 +436,22 @@ export function normalizeThemeDocument(input: {
     (rawSettings.secondaryColor as string) ||
     (rawSettings.accentColor as string) ||
     '#F59E0B';
+  const resolvedTypographyPreset = (
+    ['modern', 'elegant', 'minimal', 'bold', 'classic'] as const
+  ).includes(nestedType?.preset as 'modern')
+    ? (nestedType?.preset as
+        | 'modern'
+        | 'elegant'
+        | 'minimal'
+        | 'bold'
+        | 'classic')
+    : 'modern';
+  const presetTypography =
+    TYPOGRAPHY_PRESETS[resolvedTypographyPreset] || TYPOGRAPHY_PRESETS.modern!;
   const font =
     (nestedType?.bodyFont as string) ||
     (rawSettings.fontFamily as string) ||
+    presetTypography.bodyFont ||
     'Inter';
 
   const themeSettings = themeSettingsSchema.parse({
@@ -400,21 +476,20 @@ export function normalizeThemeDocument(input: {
       error: (nestedColors?.error as string) || '#EF4444',
     },
     typography: {
-      headingFont: (nestedType?.headingFont as string) || font,
+      headingFont:
+        (nestedType?.headingFont as string) ||
+        (rawSettings.fontFamily as string) ||
+        presetTypography.headingFont ||
+        font,
       bodyFont: font,
       baseFontSize: Number(nestedType?.baseFontSize ?? 16),
-      headingWeight: Number(nestedType?.headingWeight ?? 700),
-      bodyWeight: Number(nestedType?.bodyWeight ?? 400),
-      preset: (
-        ['modern', 'elegant', 'minimal', 'bold', 'classic'] as const
-      ).includes(nestedType?.preset as 'modern')
-        ? (nestedType?.preset as
-            | 'modern'
-            | 'elegant'
-            | 'minimal'
-            | 'bold'
-            | 'classic')
-        : 'modern',
+      headingWeight: Number(
+        nestedType?.headingWeight ?? presetTypography.headingWeight ?? 700,
+      ),
+      bodyWeight: Number(
+        nestedType?.bodyWeight ?? presetTypography.bodyWeight ?? 400,
+      ),
+      preset: resolvedTypographyPreset,
     },
     header: {
       style: (['solid', 'minimal', 'centered'] as const).includes(
@@ -452,6 +527,7 @@ export function normalizeThemeDocument(input: {
     },
     productCard: asRecord(rawSettings.productCard) || {},
     buttons: asRecord(rawSettings.buttons) || {},
+    designSystem: asRecord(rawSettings.designSystem) || {},
     cornerRadius:
       rawSettings.cornerRadius ?? rawSettings.borderRadius ?? '12',
     // Keep legacy mirrors for older storefront readers

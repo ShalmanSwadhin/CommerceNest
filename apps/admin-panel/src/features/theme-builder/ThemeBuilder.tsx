@@ -546,6 +546,7 @@ export function ThemeBuilder({ storeId }: ThemeBuilderProps) {
                 <div>
                   <p className="text-sm font-semibold text-ink">
                     Version {v.versionNumber ?? v.version ?? '—'}
+                    {v.label ? <span className="ml-2 font-normal text-ink-secondary">— {v.label}</span> : null}
                   </p>
                   <p className="text-xs text-ink-secondary">
                     {v.status} · {v.createdAt ? formatDate(v.createdAt) : '—'}

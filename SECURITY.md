@@ -105,7 +105,7 @@ Exceeded limits return `429` with code `RATE_LIMITED`.
 
 ## Redis: when it's actually required
 
-`apps/api/src/lib/redis.ts` uses Redis for three things: refresh-token revocation (`jti` → user ID, 7-day TTL), rate-limit counters (`kvIncr`), and OTP codes (`kvSet`/`kvGet`, 10-minute TTL). All three fall back transparently to an in-process `Map` when `REDIS_URL` is unset, or if Redis becomes unreachable after a successful connection (`useMemory` flips back on any client error — see `redis.ts:54-57`) — the API never crashes or degrades functionality because of Redis; it silently switches storage backend.
+`apps/api/src/lib/redis.ts` uses Redis for three things: refresh-token revocation (`jti` → user ID, 7-day TTL), rate-limit counters (`kvIncr`), and OTP codes (`kvSet`/`kvGet`, 5-minute expiry). All three fall back transparently to an in-process `Map` when `REDIS_URL` is unset, or if Redis becomes unreachable after a successful connection (`useMemory` flips back on any client error — see `redis.ts:54-57`) — the API never crashes or degrades functionality because of Redis; it silently switches storage backend.
 
 **Single API instance (the expected V1 pilot topology — one VPS, one API container): Redis is optional.** The in-memory fallback is fully correct for this case — there's only one process holding the state, so nothing gets out of sync.
 
@@ -189,9 +189,14 @@ Never hide impersonation state — operators must always know they are not in th
 
 ## OTP (storefront customers)
 
-- 6-digit code, 10-minute TTL in Redis
+- 6-digit code, 5-minute expiry (`storefront.service.ts` — `OTP_TTL_SECONDS`), enforced via an explicit `expiresAt` stored alongside the code rather than relying solely on the kv entry's own TTL (see below for why)
+- Stored as a **bcrypt hash** (`lib/password.ts#hashToken`/`verifyTokenHash`, the same primitive used for invite/reset tokens), never plaintext — bcrypt's deliberate slowness resists offline brute-force of the 6-digit (1,000,000-value) keyspace far better than a fast hash would
+- **Max 5 incorrect attempts** per code (`OTP_MAX_ATTEMPTS`) — the code is invalidated immediately once exceeded, not just rate-limited; each failed attempt re-persists the stored entry with the incremented count and the *original* `expiresAt` preserved (a plain kv `SET` would otherwise reset the TTL back to the full window on every wrong guess)
+- **60-second resend cooldown per phone** (`OTP_RESEND_COOLDOWN_SECONDS`), independent of the broader per-IP/per-phone rate limits below — a dedicated `otp:cooldown:{slug}:{phone}` kv key
+- **Single-use**: the stored entry is deleted immediately on successful verification, so replaying the same correct code a second time fails exactly like an expired one
 - Rate limited on both request and verify endpoints (verify is limited per-IP **and** per-phone — see rate limiting table — so the 6-digit space can't be brute-forced by rotating IPs)
-- **`devCode`/`devToken`/dev invite tokens returned only when `NODE_ENV === 'development'`** (tightened from `!== 'production'`, which would have also leaked in a `staging`/`test`-labeled deployment) — must not leak in prod
+- **`devCode`/`devToken`/dev invite tokens returned only when `NODE_ENV === 'development'` or `'test'`** (never `'production'`) — must not leak in prod
+- **SMS delivery**: goes through `lib/sms.ts`'s `SmsProvider` boundary — `twilio` when `SMS_PROVIDER=twilio` and its three credential vars are all set, otherwise a local-log-only stub. The stub is refused outright in production (`requestOtp` returns 503 `SMS_UNAVAILABLE`) rather than silently pretending a code was sent — OTP is the *only* customer authentication mechanism (see DECISIONS.md), so a dropped SMS here has no fallback the way a dropped notification email does. See `OTP_IMPLEMENTATION_REPORT.md` for the full writeup.
 
 ---
 

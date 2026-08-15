@@ -219,6 +219,8 @@ export interface ThemeVersion {
   createdAt?: string;
   publishedAt?: string | null;
   createdBy?: { name?: string };
+  /** Optional human-readable snapshot label, e.g. "Before summer campaign". */
+  label?: string | null;
 }
 
 export interface NormalizedThemeDraft {
@@ -435,6 +437,7 @@ export const adminApi = {
     payload: {
       themeSettings: ThemeSettings | Record<string, unknown>;
       layout?: unknown;
+      label?: string;
     },
   ) =>
     apiRequest<ThemeVersion>(`/api/admin/stores/${storeId}/theme/draft`, {
@@ -442,11 +445,13 @@ export const adminApi = {
       body: JSON.stringify({
         themeSettings: payload.themeSettings,
         layout: payload.layout ?? { sections: [] },
+        ...(payload.label !== undefined ? { label: payload.label } : {}),
       }),
     }),
-  publishTheme: (storeId: string) =>
+  publishTheme: (storeId: string, label?: string) =>
     apiRequest<ThemeVersion>(`/api/admin/stores/${storeId}/theme/publish`, {
       method: 'POST',
+      body: JSON.stringify({ label }),
     }),
   themeVersions: (storeId: string) =>
     apiRequest<ThemeVersion[] | { data: ThemeVersion[] }>(

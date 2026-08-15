@@ -1,4 +1,5 @@
 import { Quote } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { homeContent } from '@/content/home';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -18,7 +19,11 @@ export function TestimonialsSection() {
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {testimonials.items.map((item, index) => (
             <ScrollReveal key={item.id} delayMs={index * 70}>
-              <figure className="flex h-full flex-col rounded-2xl border border-slate-200 bg-mist p-6 shadow-card">
+              <motion.figure
+                whileHover={{ y: -6 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                className="flex h-full flex-col rounded-2xl border border-slate-200 bg-mist p-6 shadow-card"
+              >
                 <Quote className="h-8 w-8 text-brand" aria-hidden />
                 <blockquote className="mt-4 flex-1 text-sm leading-relaxed text-ink-secondary">
                   “{item.quote}”
@@ -40,7 +45,7 @@ export function TestimonialsSection() {
                     <span className="block text-xs text-ink-muted">{item.business}</span>
                   </span>
                 </figcaption>
-              </figure>
+              </motion.figure>
             </ScrollReveal>
           ))}
         </div>

@@ -54,6 +54,10 @@ export class AppError extends Error {
   static rateLimited(message = 'Too many requests') {
     return new AppError(429, ApiErrorCode.RATE_LIMITED, message);
   }
+
+  static serviceUnavailable(message: string, code: string = ApiErrorCode.SMS_UNAVAILABLE) {
+    return new AppError(503, code, message);
+  }
 }
 
 export function asyncHandler(

@@ -18,7 +18,7 @@ export function ProtectedRoute() {
   if (!accessToken || !user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  if (!storeRoles.has(user.role) || (!user.storeId && user.role !== 'MASTER_ADMIN')) {
+  if (!storeRoles.has(user.role) || !user.storeId) {
     return <Navigate to="/login" replace />;
   }
   return <Outlet />;

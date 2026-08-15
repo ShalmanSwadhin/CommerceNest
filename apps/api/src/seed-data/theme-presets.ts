@@ -45,10 +45,10 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
     typographyPreset: 'modern',
     headerStyle: 'solid',
     sections: [
-      section('hero', { badge: 'New Arrivals', title: 'The Latest Tech, Delivered Fast', subtitle: 'Genuine gadgets, warranty included.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/electronics-hero/1600/900', backgroundPosition: 'center', overlayType: 'dark', overlay: 55 }),
+      section('hero', { badge: 'New Arrivals', title: 'The Latest Tech, Delivered Fast', subtitle: 'Genuine gadgets, warranty included.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://cdn.stocksnap.io/img-thumbs/960w/X4AAF4SU9Q.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 55 }),
       section('featured-categories', { title: 'Shop by Category', limit: 6 }),
       section('best-sellers', { title: 'Best Sellers', subtitle: 'Most-loved gadgets this month', columns: 4, limit: 8 }),
-      section('promo-banner', { heading: 'Deals of the Week', description: 'Up to 30% off selected accessories.', ctaLabel: 'Shop deals', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/electronics-deals/1200/600', backgroundPosition: 'center', overlayType: 'dark', overlay: 50 }),
+      section('promo-banner', { heading: 'Deals of the Week', description: 'Up to 30% off selected accessories.', ctaLabel: 'Shop deals', backgroundType: 'image', imageUrl: 'https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIyLTA0L3Vwd2s2MTgwMzYxMC13aWtpbWVkaWEtaW1hZ2Uta293cTFicm0uanBn.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 50 }),
       section('featured-products', { title: 'New Arrivals', columns: 4, limit: 8, showViewAll: true }),
       section('newsletter', { title: 'Get restock alerts', subtitle: 'Be first to know when new stock lands.' }),
     ],
@@ -62,10 +62,10 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
     typographyPreset: 'elegant',
     headerStyle: 'centered',
     sections: [
-      section('hero', { badge: '', title: 'The New Collection', subtitle: 'Curated looks for every season.', layout: 'centered', height: 'lg', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/fashion-hero/1600/900', backgroundPosition: 'top', overlayType: 'dark', overlay: 35 }),
+      section('hero', { badge: '', title: 'The New Collection', subtitle: 'Curated looks for every season.', layout: 'centered', height: 'lg', backgroundType: 'image', imageUrl: 'https://live.staticflickr.com/65535/50179598477_3f83909320_b.jpg', backgroundPosition: 'top', overlayType: 'dark', overlay: 35 }),
       section('featured-categories', { title: 'Collections', limit: 6 }),
       section('featured-products', { title: 'New Arrivals', columns: 3, limit: 6 }),
-      section('promo-banner', { heading: 'The Lookbook', description: 'See how our community styles this season.', ctaLabel: 'View lookbook', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/fashion-lookbook/1200/600', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
+      section('promo-banner', { heading: 'The Lookbook', description: 'See how our community styles this season.', ctaLabel: 'View lookbook', backgroundType: 'image', imageUrl: 'https://cdn.stocksnap.io/img-thumbs/960w/ZN97ZIF3ZU.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
       section('best-sellers', { title: 'Most Loved', columns: 4, limit: 8 }),
       section('newsletter', { title: 'Join the list', subtitle: 'Early access to drops and private sales.' }),
     ],
@@ -79,9 +79,9 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
     typographyPreset: 'modern',
     headerStyle: 'solid',
     sections: [
-      section('hero', { badge: 'Free delivery over 999 Tk', title: 'Groceries at Your Doorstep', subtitle: 'Fresh produce, daily essentials, same-day delivery.', layout: 'content-left', height: 'md', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/grocery-hero/1600/900', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
+      section('hero', { badge: 'Free delivery over 999 Tk', title: 'Groceries at Your Doorstep', subtitle: 'Fresh produce, daily essentials, same-day delivery.', layout: 'content-left', height: 'md', backgroundType: 'image', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Healthy_Grocery_Shopping_%28Unsplash%29.jpg/960px-Healthy_Grocery_Shopping_%28Unsplash%29.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
       section('featured-categories', { title: 'Shop by Aisle', limit: 6 }),
-      section('promo-banner', { heading: "Today's Deals", description: 'Fresh discounts, updated daily.', ctaLabel: 'See deals', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/grocery-deals/1200/600', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
+      section('promo-banner', { heading: "Today's Deals", description: 'Fresh discounts, updated daily.', ctaLabel: 'See deals', backgroundType: 'image', imageUrl: 'https://cdn.stocksnap.io/img-thumbs/960w/UW8AKAGQI3.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
       section('featured-products', { title: 'Popular Products', columns: 4, limit: 8 }),
       section('why-choose-us', {
         title: 'Fresh Picks, Every Time',
@@ -120,7 +120,7 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
     typographyPreset: 'bold',
     headerStyle: 'solid',
     sections: [
-      section('hero', { badge: 'Now delivering', title: 'Great Food, Delivered Hot', subtitle: 'Order your favorites in minutes.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/restaurant-hero/1600/900', backgroundPosition: 'center', overlayType: 'dark', overlay: 55 }),
+      section('hero', { badge: 'Now delivering', title: 'Great Food, Delivered Hot', subtitle: 'Order your favorites in minutes.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://cdn.stocksnap.io/img-thumbs/960w/JSFGN9B9CV.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 55 }),
       section('featured-categories', { title: 'Menu Categories', limit: 6 }),
       section('featured-products', { title: 'Popular Dishes', columns: 4, limit: 8 }),
       section('why-choose-us', {
@@ -144,10 +144,10 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
     typographyPreset: 'modern',
     headerStyle: 'solid',
     sections: [
-      section('hero', { badge: 'Authorized reseller', title: 'Phones & Accessories You Can Trust', subtitle: 'Genuine products, official warranty.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/mobile-hero/1600/900', backgroundPosition: 'center', overlayType: 'dark', overlay: 50 }),
+      section('hero', { badge: 'Authorized reseller', title: 'Phones & Accessories You Can Trust', subtitle: 'Genuine products, official warranty.', layout: 'content-left', height: 'lg', backgroundType: 'image', imageUrl: 'https://live.staticflickr.com/65535/48124824108_30127fec67_b.jpg', backgroundPosition: 'center', overlayType: 'dark', overlay: 50 }),
       section('best-sellers', { title: 'Best Selling Phones', columns: 4, limit: 8 }),
       section('featured-categories', { title: 'Shop by Brand', limit: 6 }),
-      section('promo-banner', { heading: 'Accessory Bundles', description: 'Case + screen protector, save 20%.', ctaLabel: 'Shop bundles', backgroundType: 'image', imageUrl: 'https://picsum.photos/seed/mobile-bundles/1200/600', backgroundPosition: 'center', overlayType: 'dark', overlay: 45 }),
+      section('promo-banner', { heading: 'Accessory Bundles', description: 'Case + screen protector, save 20%.', ctaLabel: 'Shop bundles', backgroundType: 'color' }),
       section('featured-products', { title: 'New Arrivals', columns: 4, limit: 8 }),
       section('newsletter', { title: 'Get launch-day alerts', subtitle: 'Know the moment new stock drops.' }),
     ],

@@ -16,6 +16,24 @@ import { signCustomerToken } from '../lib/jwt.js';
 import { toNumber } from './order.service.js';
 import { env } from '../lib/env.js';
 import { validateCouponForOrder } from './coupon.service.js';
+import { hashToken, verifyTokenHash } from '../lib/password.js';
+import { sendSms, SmsDeliveryError, SmsProviderUnconfiguredError } from '../lib/sms.js';
+
+/** OTP tuning — see SECURITY.md "OTP (storefront customers)". */
+const OTP_TTL_SECONDS = 5 * 60;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
+
+interface StoredOtp {
+  /** bcrypt hash — never the plaintext code (see lib/password.ts). */
+  hash: string;
+  attempts: number;
+  /** Authoritative expiry, checked explicitly in verifyOtp. Kept separate
+   * from the kv entry's own TTL because a failed attempt re-persists the
+   * entry (to save the incremented attempt count), which would otherwise
+   * reset a plain kv TTL back to the full window on every wrong guess. */
+  expiresAt: number;
+}
 
 /**
  * V1 MANUAL_BKASH is two-step:
@@ -565,12 +583,57 @@ export async function requestOtp(storeSlug: string, phone: string) {
   if (!BANGLADESH_PHONE_REGEX.test(phone)) {
     throw AppError.badRequest('Invalid Bangladesh phone number');
   }
+
+  const cooldownKey = `otp:cooldown:${storeSlug}:${phone}`;
+  if (await kvGet(cooldownKey)) {
+    throw AppError.rateLimited(
+      'Please wait a moment before requesting another code',
+    );
+  }
+
   const code = String(Math.floor(100000 + Math.random() * 900000));
-  await kvSet(`otp:${storeSlug}:${phone}`, code, 60 * 10);
+  const stored: StoredOtp = {
+    hash: await hashToken(code),
+    attempts: 0,
+    expiresAt: Date.now() + OTP_TTL_SECONDS * 1000,
+  };
+  // Outer kv TTL is a generous cleanup bound, not the real expiry —
+  // stored.expiresAt is what verifyOtp actually enforces.
+  await kvSet(
+    `otp:${storeSlug}:${phone}`,
+    JSON.stringify(stored),
+    OTP_TTL_SECONDS + 60,
+  );
+
+  try {
+    await sendSms({
+      to: phone,
+      body: `Your CommerceNest verification code is ${code}. It expires in 5 minutes. Do not share this code.`,
+      templateKey: 'otp.request',
+    });
+  } catch (err) {
+    // Nothing was delivered — the stored code is unreachable by the
+    // customer, so there's no reason to keep it (or its attempt budget).
+    await kvDel(`otp:${storeSlug}:${phone}`);
+    if (
+      err instanceof SmsProviderUnconfiguredError ||
+      err instanceof SmsDeliveryError
+    ) {
+      throw AppError.serviceUnavailable(
+        'We could not send the verification code right now. Please try again shortly.',
+      );
+    }
+    throw err;
+  }
+
+  await kvSet(cooldownKey, '1', OTP_RESEND_COOLDOWN_SECONDS);
+
   return {
     ok: true,
     message: 'OTP sent',
-    ...(env.NODE_ENV === 'development' ? { devCode: code } : {}),
+    ...(env.NODE_ENV === 'development' || env.NODE_ENV === 'test'
+      ? { devCode: code }
+      : {}),
   };
 }
 
@@ -580,11 +643,53 @@ export async function verifyOtp(
   code: string,
 ) {
   const store = await resolveStoreBySlug(storeSlug);
-  const stored = await kvGet(`otp:${storeSlug}:${phone}`);
-  if (!stored || stored !== code) {
+  const key = `otp:${storeSlug}:${phone}`;
+  const raw = await kvGet(key);
+  if (!raw) {
     throw AppError.unauthorized('Invalid or expired OTP');
   }
-  await kvDel(`otp:${storeSlug}:${phone}`);
+
+  let stored: StoredOtp;
+  try {
+    stored = JSON.parse(raw) as StoredOtp;
+  } catch {
+    await kvDel(key);
+    throw AppError.unauthorized('Invalid or expired OTP');
+  }
+
+  if (Date.now() > stored.expiresAt || stored.attempts >= OTP_MAX_ATTEMPTS) {
+    await kvDel(key);
+    throw AppError.unauthorized(
+      stored.attempts >= OTP_MAX_ATTEMPTS
+        ? 'Too many incorrect attempts. Please request a new code.'
+        : 'Invalid or expired OTP',
+    );
+  }
+
+  const isMatch = await verifyTokenHash(code, stored.hash);
+  if (!isMatch) {
+    const attempts = stored.attempts + 1;
+    if (attempts >= OTP_MAX_ATTEMPTS) {
+      await kvDel(key);
+      throw AppError.unauthorized(
+        'Too many incorrect attempts. Please request a new code.',
+      );
+    }
+    const remainingTtl = Math.max(
+      1,
+      Math.ceil((stored.expiresAt - Date.now()) / 1000),
+    );
+    await kvSet(
+      key,
+      JSON.stringify({ ...stored, attempts }),
+      remainingTtl + 60,
+    );
+    throw AppError.unauthorized('Invalid or expired OTP');
+  }
+
+  // Correct code, consumed immediately — a second verify with the same
+  // code (replay) now finds nothing and fails like any expired OTP.
+  await kvDel(key);
 
   let customer = await prisma.customer.findUnique({
     where: { storeId_phone: { storeId: store.id, phone } },

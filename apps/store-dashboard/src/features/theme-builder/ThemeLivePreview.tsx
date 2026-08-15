@@ -281,8 +281,18 @@ export function ThemeLivePreview({
           maxWidth: widths[device],
           borderRadius: 16,
           fontFamily: themeSettings.typography.bodyFont,
+          fontWeight: themeSettings.typography.bodyWeight,
+          ['--preview-heading-font' as string]:
+            themeSettings.typography.headingFont || themeSettings.typography.bodyFont,
+          ['--preview-heading-weight' as string]: themeSettings.typography.headingWeight,
         }}
       >
+        <style>{`
+          h1, h2, h3 {
+            font-family: var(--preview-heading-font) !important;
+            font-weight: var(--preview-heading-weight) !important;
+          }
+        `}</style>
         {branding.announcement ? (
           <div
             className="px-3 py-1.5 text-center text-[11px] text-white"

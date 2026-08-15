@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Alert, Button, ToastProvider } from '@commercenest/ui';
@@ -44,9 +44,27 @@ function stripQueryParams(names: string[]) {
   window.history.replaceState({}, '', next);
 }
 
+function hasHandoffCodeInUrl() {
+  return new URLSearchParams(window.location.search).has('impersonation_handoff');
+}
+
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
-  const [handoff, setHandoff] = useState<'idle' | 'pending' | 'error'>('idle');
+  // Lazy initializer: runs synchronously during the first render, before
+  // `children` (the router) ever mounts. This matters because a plain
+  // `useState('idle')` + checking the URL inside `useEffect` renders
+  // `children` first regardless — and `ProtectedRoute` inside it sees no
+  // `accessToken` yet (the handoff hasn't been exchanged), immediately
+  // `Navigate`s to /login with `replace`, and wipes the ?impersonation_handoff
+  // query string before the effect ever gets a chance to read it. Seeding
+  // the initial state from the URL keeps `children` unmounted through that
+  // whole window.
+  const [handoff, setHandoff] = useState<'idle' | 'pending' | 'error'>(() =>
+    hasHandoffCodeInUrl() ? 'pending' : 'idle',
+  );
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  // Belt-and-suspenders against React 18 StrictMode's dev-only double effect
+  // invocation, so the exchange can never fire twice for one handoff code.
+  const handoffStartedRef = useRef(false);
 
   useEffect(() => {
     configureApiAuth({
@@ -62,9 +80,9 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
     // Impersonation handoff: Master Admin opens this app with a short-lived,
     // single-use code that we exchange for real session tokens.
     const handoffCode = params.get('impersonation_handoff');
-    if (handoffCode) {
+    if (handoffCode && !handoffStartedRef.current) {
+      handoffStartedRef.current = true;
       stripQueryParams(['impersonation_handoff']);
-      setHandoff('pending');
       void (async () => {
         try {
           const { accessToken, refreshToken } =

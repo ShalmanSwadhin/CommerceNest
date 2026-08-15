@@ -536,6 +536,10 @@ model StorefrontVersion {
   status        StorefrontVersionStatus @default(DRAFT)
   layout        Json
   themeSettings Json
+  /// Optional human-readable snapshot label (e.g. "Before summer campaign"),
+  /// set from Theme Builder Pro's Save/Publish flow. Purely descriptive —
+  /// never required, never affects publish/restore behavior.
+  label         String?
   publishedAt   DateTime?
   createdById   String?
   createdAt     DateTime                @default(now())

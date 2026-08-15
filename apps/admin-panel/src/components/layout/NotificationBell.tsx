@@ -64,7 +64,7 @@ export function NotificationBell() {
             {unreadCount > 0 ? (
               <button
                 type="button"
-                className="text-xs font-medium text-brand hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
                 onClick={() => markAllMut.mutate()}
               >
                 Mark all read
@@ -82,7 +82,7 @@ export function NotificationBell() {
                   key={n.id}
                   type="button"
                   className={`block w-full border-b border-line px-3 py-2.5 text-left last:border-0 hover:bg-surface-raised ${
-                    n.readAt ? '' : 'bg-brand/[0.04]'
+                    n.readAt ? '' : 'bg-primary/[0.04]'
                   }`}
                   onClick={() => {
                     if (!n.readAt) markOneMut.mutate(n.id);

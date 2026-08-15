@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { StoresPage } from './pages/StoresPage';
 import { StoreDetailPage } from './pages/StoreDetailPage';
 import { ThemeEditorPage } from './pages/ThemeEditorPage';
+import { ThemeEditorProPage } from './pages/ThemeEditorProPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
@@ -54,6 +55,7 @@ export default function App() {
                   <Route path="users" element={<UsersPage />} />
                   <Route path="themes" element={<ThemeEditorPage />} />
                   <Route path="themes/:storeId" element={<ThemeEditorPage />} />
+                  <Route path="themes/:storeId/pro" element={<ThemeEditorProPage />} />
                   <Route path="trial-leads" element={<TrialLeadsPage />} />
                   <Route path="pricing" element={<PricingPage />} />
                   <Route path="payments" element={<PaymentsPage />} />

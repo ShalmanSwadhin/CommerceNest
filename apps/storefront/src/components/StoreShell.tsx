@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { normalizeThemeDocument } from '@commercenest/types/schemas/theme';
+import { normalizeThemeDocument, resolveDesignSystem } from '@commercenest/types/schemas/theme';
 import { Button } from '@commercenest/ui';
 import { Clock, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
@@ -60,10 +60,14 @@ export function StoreShell() {
   const typography = doc.themeSettings.typography;
   const primary = colors.primary || '#6C1DB3';
   const fontFamily = `${typography.bodyFont || 'Inter'}, system-ui, sans-serif`;
+  const headingFontFamily = `${typography.headingFont || typography.bodyFont || 'Inter'}, system-ui, sans-serif`;
+  const headingWeight = typography.headingWeight || 700;
+  const bodyWeight = typography.bodyWeight || 400;
   const logoUrl = branding.logoUrl || flatTheme.logoUrl || '';
   const faviconUrl = branding.faviconUrl || flatTheme.faviconUrl || '';
   const announcement = branding.announcement || flatTheme.announcement || '';
   const radius = String(doc.themeSettings.cornerRadius ?? '12');
+  const designSystem = resolveDesignSystem(doc.themeSettings);
 
   useEffect(() => {
     if (!faviconUrl || typeof document === 'undefined') return;
@@ -147,6 +151,7 @@ export function StoreShell() {
 
   const headerSticky = header.sticky !== false;
   const headerCentered = header.style === 'centered';
+  const headerMinimal = header.style === 'minimal';
   const logoH =
     header.logoSize === 'sm' ? 'h-7' : header.logoSize === 'lg' ? 'h-11' : 'h-8';
 
@@ -174,12 +179,24 @@ export function StoreShell() {
         ['--store-muted' as string]: colors.mutedText,
         ['--store-border' as string]: colors.border,
         ['--store-radius' as string]: `${radius}px`,
+        ['--store-shadow' as string]: designSystem.shadowCss,
+        ['--store-button-style' as string]: designSystem.buttonStyle,
         ['--store-font' as string]: fontFamily,
+        ['--store-heading-font' as string]: headingFontFamily,
+        ['--store-heading-weight' as string]: headingWeight,
+        ['--store-body-weight' as string]: bodyWeight,
         background: colors.background || '#f7f8fb',
         color: colors.text || '#111827',
         fontFamily: 'var(--store-font)',
+        fontWeight: 'var(--store-body-weight)',
       }}
     >
+      <style>{`
+        h1, h2, h3 {
+          font-family: var(--store-heading-font) !important;
+          font-weight: var(--store-heading-weight) !important;
+        }
+      `}</style>
       <Helmet>
         <title>{store?.name ? `${store.name} · CommerceNest` : 'CommerceNest Storefront'}</title>
         {store?.tagline ? <meta name="description" content={store.tagline} /> : null}
@@ -191,13 +208,15 @@ export function StoreShell() {
         </div>
       ) : null}
       <header
-        className={`${headerSticky ? 'sticky top-0 z-20' : ''} border-b bg-white/95 backdrop-blur`}
-        style={{ borderColor: 'var(--store-border)' }}
+        className={`${headerSticky ? 'sticky top-0 z-20' : ''} ${
+          headerMinimal ? '' : 'border-b'
+        } bg-white/95 backdrop-blur`}
+        style={headerMinimal ? undefined : { borderColor: 'var(--store-border)' }}
       >
         <div
-          className={`mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 ${
-            headerCentered ? 'flex-col md:flex-row md:justify-between' : 'justify-between'
-          }`}
+          className={`mx-auto flex max-w-6xl items-center gap-4 px-4 ${
+            headerMinimal ? 'py-2.5' : 'py-3'
+          } ${headerCentered ? 'flex-col md:flex-row md:justify-between' : 'justify-between'}`}
         >
           <div className="flex w-full items-center gap-2 md:w-auto">
             <button

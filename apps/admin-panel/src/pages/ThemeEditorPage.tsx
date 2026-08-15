@@ -63,13 +63,18 @@ export function ThemeEditorPage() {
             <Card key={store.id} className="p-4">
               <p className="font-semibold text-ink">{store.name}</p>
               <p className="text-xs text-ink-secondary">{store.slug}</p>
-              <Button
-                className="mt-3"
-                size="sm"
-                onClick={() => navigate(`/themes/${store.id}`)}
-              >
-                Open Theme Builder
-              </Button>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" onClick={() => navigate(`/themes/${store.id}`)}>
+                  Open Theme Builder
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => navigate(`/themes/${store.id}/pro`)}
+                >
+                  Try Pro (Beta)
+                </Button>
+              </div>
             </Card>
           ))}
         </div>

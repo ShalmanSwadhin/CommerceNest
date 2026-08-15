@@ -7,6 +7,7 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { homeContent } from '@/content/home';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -42,7 +43,11 @@ export function FeaturesSection() {
             const Icon = icons[feature.icon];
             return (
               <ScrollReveal key={feature.id} delayMs={index * 60}>
-                <article className="group h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-card transition duration-300 hover:-translate-y-1 hover:border-brand/25 hover:shadow-lift">
+                <motion.article
+                  whileHover={{ y: -6 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                  className="group h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-card transition-colors duration-300 hover:border-brand/25 hover:shadow-lift"
+                >
                   <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand/10 text-brand transition group-hover:bg-brand group-hover:text-white">
                     <Icon className="h-6 w-6" aria-hidden />
                   </div>
@@ -50,7 +55,7 @@ export function FeaturesSection() {
                   <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
                     {feature.description}
                   </p>
-                </article>
+                </motion.article>
               </ScrollReveal>
             );
           })}

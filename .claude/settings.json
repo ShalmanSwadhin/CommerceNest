@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"C:/Users/USER/AppData/Local/Temp/claude/e--commercenest/66ea4f37-9057-4b78-a338-6995c80c2a30/scratchpad/rate-presets.mjs\" ./rate-presets-tmp.mjs)",
+      "Bash(node rate-presets-tmp.mjs)",
+      "Bash(cd e:/commercenest && rm -f check-grocery-img.mjs grocery-recheck.png && git status --short | grep -v \"^??\" | head -30)"
+    ],
+    "additionalDirectories": [
+      "e:\\commercenest"
+    ]
+  }
+}

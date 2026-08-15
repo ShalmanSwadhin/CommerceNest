@@ -7,7 +7,8 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
   return (
     <Link
       to={`/p/${product.slug}`}
-      className="group overflow-hidden rounded-cn-lg border border-line bg-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift"
+      className="group overflow-hidden border border-line bg-white transition hover:-translate-y-0.5"
+      style={{ borderRadius: 'var(--store-radius, 12px)', boxShadow: 'var(--store-shadow, 0 1px 3px rgba(15,23,42,0.08))' }}
     >
       <div className="aspect-square overflow-hidden bg-surface-sunken">
         {image ? (

@@ -21,8 +21,10 @@ export function LoginPage() {
     setError(null);
     try {
       const res = await storeApi.login(email, password);
-      if (!res.user.storeId && res.user.role !== 'MASTER_ADMIN') {
-        setError('This account is not linked to a store.');
+      if (!res.user.storeId) {
+        setError(
+          'This account is not linked to a store. Master Admins should use "Impersonate" from the Stores page in the admin panel instead of signing in here directly.',
+        );
         return;
       }
       setSession(res.accessToken, res.user, res.refreshToken ?? null);

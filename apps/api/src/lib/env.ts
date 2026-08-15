@@ -48,7 +48,14 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
+  // Provider-agnostic naming so swapping providers later is a config change,
+  // not a code change — see lib/sms.ts for the provider boundary. Currently
+  // 'twilio' is the only real adapter implemented; empty/unset uses the
+  // local-stub (dev/test only — see hasSmsProvider below).
   SMS_PROVIDER: z.string().optional().default(''),
+  SMS_PROVIDER_API_KEY: z.string().optional().default(''),
+  SMS_PROVIDER_API_SECRET: z.string().optional().default(''),
+  SMS_PROVIDER_SENDER_ID: z.string().optional().default(''),
   // Generic SMTP — works with any provider (a merchant's own mailbox, a
   // self-hosted mail server, or a transactional-email service) rather than
   // integrating one specific paid vendor's API. Empty by default: emails
@@ -78,6 +85,13 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+/** True when a real (non-stub) SMS provider is fully configured. See lib/sms.ts. */
+export const hasSmsProvider =
+  env.SMS_PROVIDER === 'twilio' &&
+  Boolean(env.SMS_PROVIDER_API_KEY) &&
+  Boolean(env.SMS_PROVIDER_API_SECRET) &&
+  Boolean(env.SMS_PROVIDER_SENDER_ID);
 
 // Production hard requirements: real secrets + database
 if (env.NODE_ENV === 'production') {
@@ -164,6 +178,21 @@ if (env.NODE_ENV === 'production') {
         'sent. Set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM to enable real delivery ' +
         '(any SMTP provider works — a merchant mailbox, self-hosted mail server, or a transactional ' +
         'email service).',
+    );
+  }
+  if (!hasSmsProvider) {
+    // Unlike SMTP above, this IS a hard functional break, not a degraded
+    // nice-to-have: customer OTP login is the *only* customer authentication
+    // mechanism (see DECISIONS.md — no password login exists). Without a
+    // real SMS provider, requestOtp() has no way to deliver the code and
+    // will reject every request with SMS_UNAVAILABLE (503) rather than
+    // silently using the dev-only local-stub — see lib/sms.ts.
+    console.error(
+      '[env] PRODUCTION MISCONFIGURATION: No real SMS provider is configured (SMS_PROVIDER/' +
+        'SMS_PROVIDER_API_KEY/SMS_PROVIDER_API_SECRET/SMS_PROVIDER_SENDER_ID). Customer OTP login ' +
+        'will fail every request with a 503 SMS_UNAVAILABLE error — the local-stub OTP delivery is ' +
+        'refused outright in production rather than silently pretending to send. Configure a real ' +
+        'provider before launch; see lib/sms.ts and OTP_IMPLEMENTATION_REPORT.md.',
     );
   }
 }
