@@ -56,9 +56,12 @@ export async function requireAuth(
         id: true,
         email: true,
         name: true,
+        phone: true,
         role: true,
         storeId: true,
         status: true,
+        emailVerified: true,
+        phoneVerified: true,
       },
     });
 
@@ -90,8 +93,11 @@ export async function requireAuth(
       id: user.id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
       role: user.role as UserRoleType,
       storeId,
+      emailVerified: user.emailVerified,
+      phoneVerified: user.phoneVerified,
       impersonationSessionId,
     };
     next();

@@ -53,6 +53,8 @@ export interface TrialLeadInput {
   businessName: string;
   phone: string;
   email: string;
+  password: string;
+  confirmPassword: string;
   category?: string;
   catalogSize?: string;
   message?: string;

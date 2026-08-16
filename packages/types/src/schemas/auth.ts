@@ -114,41 +114,60 @@ export type MasterAdminInviteStoreOwnerInput = z.infer<
 // Customer storefront authentication
 // ---------------------------------------------------------------------------
 
+/**
+ * Name/email/password is the PRIMARY storefront customer path — simple,
+ * immediate, no forced verification (see AUTHENTICATION_ARCHITECTURE.md).
+ * Phone OTP login (bangladeshPhoneSchema-based, see storefrontOtpRequest/
+ * VerifySchema below) remains available as a second, independent login
+ * method — not replaced by this.
+ */
+export const customerRegisterSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    email: emailSchema,
+    password: passwordSchema,
+    confirmPassword: z.string(),
+    phone: bangladeshPhoneSchema.optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      });
+    }
+  });
+
+export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+
 export const customerLoginSchema = z
   .object({
-    phone: bangladeshPhoneSchema,
+    email: emailSchema,
     password: z.string().min(1, { message: 'Password is required' }),
   })
   .strict();
 
 export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
 
-export const customerRegisterSchema = z
+export const customerRequestPasswordResetSchema = z
   .object({
-    phone: bangladeshPhoneSchema,
-    name: z.string().trim().min(1).max(120),
-    email: emailSchema.optional(),
-    password: passwordSchema.optional(),
+    email: emailSchema,
   })
   .strict();
 
-export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
-
-export const requestPasswordResetSchema = z
-  .object({
-    phone: bangladeshPhoneSchema,
-  })
-  .strict();
-
-export type RequestPasswordResetInput = z.infer<
-  typeof requestPasswordResetSchema
+export type CustomerRequestPasswordResetInput = z.infer<
+  typeof customerRequestPasswordResetSchema
 >;
 
-export const resetPasswordSchema = z
+export const customerResetPasswordSchema = z
   .object({
     token: z.string().min(1),
     password: passwordSchema,
   })
   .strict();
 
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type CustomerResetPasswordInput = z.infer<
+  typeof customerResetPasswordSchema
+>;

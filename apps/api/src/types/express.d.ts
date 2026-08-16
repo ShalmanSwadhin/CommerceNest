@@ -10,12 +10,15 @@ declare global {
         storeId: string | null;
         email: string;
         name: string;
+        phone: string | null;
+        emailVerified: boolean;
+        phoneVerified: boolean;
         impersonationSessionId?: string;
       };
       customer?: {
         id: string;
         storeId: string;
-        phone: string;
+        phone: string | null;
         name: string;
         email: string | null;
       };

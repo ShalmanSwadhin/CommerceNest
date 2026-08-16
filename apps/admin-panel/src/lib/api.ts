@@ -145,6 +145,29 @@ export interface StoreRow {
   createdAt?: string;
   domains?: Array<{ hostname: string; isPrimary?: boolean }>;
   _count?: { users?: number; orders?: number; products?: number };
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvalReason?: string | null;
+  approvedBy?: { id: string; name: string } | null;
+  owner?: {
+    id: string;
+    email: string;
+    name: string;
+    phone?: string | null;
+    emailVerified?: boolean;
+    phoneVerified?: boolean;
+  };
+}
+
+export interface DomainRequestRow {
+  id: string;
+  requestedLabel: string;
+  requestedHostname: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ASSIGNED';
+  note?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  store: { id: string; name: string; slug: string };
+  reviewedBy?: { id: string; name: string } | null;
 }
 
 export interface StoreDomainRow {
@@ -402,6 +425,42 @@ export const adminApi = {
     apiRequest<StoreRow>(`/api/admin/stores/${id}/reactivate`, { method: 'POST' }),
   archiveStore: (id: string) =>
     apiRequest<StoreRow>(`/api/admin/stores/${id}/archive`, { method: 'POST' }),
+  // Approval — independent of email/phone verification, see
+  // AUTHENTICATION_ARCHITECTURE.md. Master Admin may approve an unverified
+  // merchant; this never touches the owner's verification flags.
+  approveStore: (id: string, reason?: string) =>
+    apiRequest<StoreRow>(`/api/admin/stores/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  rejectStoreApproval: (id: string, reason?: string) =>
+    apiRequest<StoreRow>(`/api/admin/stores/${id}/reject-approval`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  // CommerceNest-namespace domain requests
+  listDomainRequests: (params: { status?: string; page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return apiRequest<{ items: DomainRequestRow[]; total: number; page: number; limit: number }>(
+      `/api/admin/domain-requests${suffix}`,
+    );
+  },
+  approveDomainRequest: (id: string) =>
+    apiRequest<DomainRequestRow>(`/api/admin/domain-requests/${id}/approve`, { method: 'POST' }),
+  rejectDomainRequest: (id: string, reason?: string) =>
+    apiRequest<DomainRequestRow>(`/api/admin/domain-requests/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  assignDomainRequest: (id: string) =>
+    apiRequest<{ domain: unknown; request: DomainRequestRow }>(
+      `/api/admin/domain-requests/${id}/assign`,
+      { method: 'POST' },
+    ),
   impersonate: (id: string) =>
     apiRequest<ImpersonateResponse>(`/api/admin/stores/${id}/impersonate`, {
       method: 'POST',

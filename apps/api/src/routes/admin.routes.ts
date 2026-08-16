@@ -39,6 +39,8 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const result = await storeService.listStores({
       status: typeof req.query.status === 'string' ? req.query.status : undefined,
+      approvalStatus:
+        typeof req.query.approvalStatus === 'string' ? req.query.approvalStatus : undefined,
       search: typeof req.query.search === 'string' ? req.query.search : undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
@@ -101,6 +103,67 @@ adminRouter.post(
   asyncHandler(async (req, res) => {
     const store = await storeService.archiveStore(param(req, 'id'), actorFrom(req));
     res.json(store);
+  }),
+);
+
+// --- Approval — independent of email/phone verification, see
+// AUTHENTICATION_ARCHITECTURE.md. Master Admin may approve an unverified
+// merchant; this never touches the owner's emailVerified/phoneVerified. ---
+adminRouter.post(
+  '/stores/:id/approve',
+  asyncHandler(async (req, res) => {
+    const reason = z.string().trim().max(1000).optional().parse(req.body?.reason);
+    res.json(
+      await storeService.approveStore(param(req, 'id'), reason, actorFrom(req)),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/stores/:id/reject-approval',
+  asyncHandler(async (req, res) => {
+    const reason = z.string().trim().max(1000).optional().parse(req.body?.reason);
+    res.json(
+      await storeService.rejectStoreApproval(param(req, 'id'), reason, actorFrom(req)),
+    );
+  }),
+);
+
+// --- CommerceNest-namespace domain requests ---
+adminRouter.get(
+  '/domain-requests',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await domainService.listDomainRequests({
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      }),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/domain-requests/:id/approve',
+  asyncHandler(async (req, res) => {
+    res.json(await domainService.approveDomainRequest(param(req, 'id'), actorFrom(req)));
+  }),
+);
+
+adminRouter.post(
+  '/domain-requests/:id/reject',
+  asyncHandler(async (req, res) => {
+    const reason = z.string().trim().max(1000).optional().parse(req.body?.reason);
+    res.json(
+      await domainService.rejectDomainRequest(param(req, 'id'), reason, actorFrom(req)),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/domain-requests/:id/assign',
+  asyncHandler(async (req, res) => {
+    res.json(await domainService.assignDomainRequest(param(req, 'id'), actorFrom(req)));
   }),
 );
 

@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HelmetProvider } from 'react-helmet-async';
@@ -16,6 +15,8 @@ import { TrackOrderPage } from './pages/TrackOrderPage';
 import { AuthPage } from './pages/AuthPage';
 import { AccountPage } from './pages/AccountPage';
 import { CmsContentPage } from './pages/CmsContentPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,13 +24,19 @@ const queryClient = new QueryClient({
   },
 });
 
+// Wired at module scope, not inside a useEffect — these closures have no
+// dependency on React's lifecycle (they read useAuthStore.getState()
+// directly), and deferring this to an effect left a real window where the
+// FIRST render's already-`enabled` queries (e.g. the account page's /me
+// call right after a page reload) fired through apiRequest() before the
+// token getter was ever wired up, silently sending no Authorization header
+// at all and logging the customer out via the resulting 401.
+configureApiAuth({
+  getAccessToken: () => useAuthStore.getState().accessToken,
+  onUnauthorized: () => useAuthStore.getState().clearSession(),
+});
+
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    configureApiAuth({
-      getAccessToken: () => useAuthStore.getState().accessToken,
-      onUnauthorized: () => useAuthStore.getState().clearSession(),
-    });
-  }, []);
   return <>{children}</>;
 }
 
@@ -52,6 +59,8 @@ export default function App() {
                   <Route path="login" element={<AuthPage mode="login" />} />
                   <Route path="register" element={<AuthPage mode="register" />} />
                   <Route path="forgot" element={<AuthPage mode="forgot" />} />
+                  <Route path="reset-password" element={<ResetPasswordPage />} />
+                  <Route path="verify-email" element={<VerifyEmailPage />} />
                   <Route path="account" element={<AccountPage />} />
                   <Route path="pages/:key" element={<CmsContentPage />} />
                 </Route>

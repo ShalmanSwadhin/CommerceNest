@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@commercenest/ui';
@@ -21,6 +20,7 @@ import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { SupportPage } from './pages/SupportPage';
 import { UsersPage } from './pages/UsersPage';
 import { TrialLeadsPage } from './pages/TrialLeadsPage';
+import { DomainRequestsPage } from './pages/DomainRequestsPage';
 import { PricingPage } from './pages/PricingPage';
 
 const queryClient = new QueryClient({
@@ -29,13 +29,17 @@ const queryClient = new QueryClient({
   },
 });
 
+// Wired at module scope, not inside a useEffect — an effect runs after the
+// first render/paint, leaving a window where an already-`enabled` query
+// (e.g. a /me call right after a page reload) fires through apiRequest()
+// before the token getter is set, silently omitting the Authorization
+// header and logging the admin out via the resulting 401.
+configureApiAuth({
+  getAccessToken: () => useAuthStore.getState().accessToken,
+  onUnauthorized: () => useAuthStore.getState().clearSession(),
+});
+
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    configureApiAuth({
-      getAccessToken: () => useAuthStore.getState().accessToken,
-      onUnauthorized: () => useAuthStore.getState().clearSession(),
-    });
-  }, []);
   return <>{children}</>;
 }
 
@@ -57,6 +61,7 @@ export default function App() {
                   <Route path="themes/:storeId" element={<ThemeEditorPage />} />
                   <Route path="themes/:storeId/pro" element={<ThemeEditorProPage />} />
                   <Route path="trial-leads" element={<TrialLeadsPage />} />
+                  <Route path="domain-requests" element={<DomainRequestsPage />} />
                   <Route path="pricing" element={<PricingPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />

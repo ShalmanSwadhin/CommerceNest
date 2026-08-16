@@ -125,11 +125,22 @@ describe.skipIf(!hasDatabase)('Trial system', () => {
       businessName: 'Test Trial Business',
       phone: '01712345678',
       email,
+      password: 'TrialPass123!',
+      confirmPassword: 'TrialPass123!',
       category: 'Electronics',
     });
     expect(res.status).toBe(201);
     expect(res.body.trialUrl).toMatch(/^https?:\/\/trial-/);
     expect(res.body.businessName).toBe('Test Trial Business');
+
+    // The owner must be able to log into store-dashboard immediately with
+    // the password they just set — no invite-token dead end.
+    const ownerLogin = await request(app).post('/api/auth/login').send({
+      email,
+      password: 'TrialPass123!',
+    });
+    expect(ownerLogin.status).toBe(200);
+    expect(ownerLogin.body.user.role).toBe('STORE_OWNER');
 
     // The lead must show up in the Master Admin's queue immediately.
     const leads = await request(app)

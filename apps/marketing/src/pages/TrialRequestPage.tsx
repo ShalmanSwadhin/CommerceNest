@@ -5,6 +5,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { SiteFooter } from '@/components/SiteFooter';
 import { ApiClientError, publicApi, type TrialLeadResult } from '@/lib/api';
 import { usePageMeta } from '@/lib/pageMeta';
+import { appLoginUrl } from '@/lib/urls';
 
 const CATEGORIES = [
   'Electronics',
@@ -34,11 +35,19 @@ export function TrialRequestPage() {
     e.preventDefault();
     setError(null);
     const form = new FormData(e.currentTarget);
+    const password = String(form.get('password') || '');
+    const confirmPassword = String(form.get('confirmPassword') || '');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
     const input = {
       prospectName: String(form.get('prospectName') || '').trim(),
       businessName: String(form.get('businessName') || '').trim(),
       phone: String(form.get('phone') || '').trim(),
       email: String(form.get('email') || '').trim(),
+      password,
+      confirmPassword,
       category: String(form.get('category') || '').trim() || undefined,
       catalogSize: String(form.get('catalogSize') || '').trim() || undefined,
       message: String(form.get('message') || '').trim() || undefined,
@@ -130,6 +139,34 @@ export function TrialRequestPage() {
                   />
                 </label>
                 <label className="block text-sm font-medium text-ink">
+                  Password
+                  <input
+                    name="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    maxLength={128}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none ring-brand focus:ring-2"
+                    autoComplete="new-password"
+                    placeholder="At least 8 characters"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-ink">
+                  Confirm password
+                  <input
+                    name="confirmPassword"
+                    type="password"
+                    required
+                    minLength={8}
+                    maxLength={128}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none ring-brand focus:ring-2"
+                    autoComplete="new-password"
+                  />
+                </label>
+                <p className="-mt-2 text-xs text-ink-muted sm:col-span-2">
+                  You'll use this password to log into your CommerceNest merchant dashboard later.
+                </p>
+                <label className="block text-sm font-medium text-ink">
                   Business category
                   <select
                     name="category"
@@ -220,6 +257,16 @@ export function TrialRequestPage() {
               Trial expires {new Date(result.trialExpiresAt).toLocaleDateString()}. Our
               team will reach out to help you get set up.
             </p>
+            <p className="mt-6 border-t border-slate-100 pt-4 text-sm text-ink-secondary">
+              Manage your store, products and orders from your merchant dashboard —
+              log in anytime with the email and password you just set.
+            </p>
+            <a
+              href={appLoginUrl()}
+              className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-ink transition hover:bg-mist"
+            >
+              Go to merchant dashboard
+            </a>
           </div>
         )}
       </main>

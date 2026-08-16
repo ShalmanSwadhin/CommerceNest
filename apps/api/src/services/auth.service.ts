@@ -44,17 +44,23 @@ function publicUser(user: {
   id: string;
   email: string;
   name: string;
+  phone?: string | null;
   role: string;
   storeId: string | null;
   status: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 }) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
+    phone: user.phone ?? null,
     role: user.role,
     storeId: user.storeId,
     status: user.status,
+    emailVerified: user.emailVerified ?? false,
+    phoneVerified: user.phoneVerified ?? false,
   };
 }
 
@@ -273,16 +279,22 @@ export function getMe(user: {
   id: string;
   email: string;
   name: string;
+  phone?: string | null;
   role: string;
   storeId: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   impersonationSessionId?: string;
 }) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
+    phone: user.phone ?? null,
     role: user.role,
     storeId: user.storeId,
+    emailVerified: user.emailVerified ?? false,
+    phoneVerified: user.phoneVerified ?? false,
     impersonationSessionId: user.impersonationSessionId,
   };
 }

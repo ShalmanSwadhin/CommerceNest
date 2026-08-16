@@ -154,8 +154,11 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  phone?: string | null;
   role: string;
   storeId?: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   impersonationSessionId?: string | null;
 }
 
@@ -360,6 +363,16 @@ export interface StaffRow {
   status?: string;
 }
 
+export interface DomainRequestRow {
+  id: string;
+  requestedLabel: string;
+  requestedHostname: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ASSIGNED';
+  note?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+}
+
 function storePath(storeId: string, suffix: string) {
   return `/api/store/${storeId}${suffix}`;
 }
@@ -375,6 +388,28 @@ export const storeApi = {
     const res = await apiRequest<{ user: AuthUser } | AuthUser>('/api/auth/me');
     return 'user' in res ? res.user : res;
   },
+  // Optional account verification — see AUTHENTICATION_ARCHITECTURE.md.
+  // Reuses the exact same infra as storefront customer verification.
+  sendEmailVerification: () =>
+    apiRequest<{ ok: boolean; message: string; alreadyVerified?: boolean; devLink?: string }>(
+      '/api/auth/email-verification/send',
+      { method: 'POST' },
+    ),
+  confirmEmailVerification: (token: string) =>
+    apiRequest<{ ok: boolean }>('/api/auth/email-verification/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  sendPhoneVerification: (phone: string) =>
+    apiRequest<{ ok: boolean; message: string; devCode?: string }>(
+      '/api/auth/phone-verification/send',
+      { method: 'POST', body: JSON.stringify({ phone }) },
+    ),
+  confirmPhoneVerification: (phone: string, code: string) =>
+    apiRequest<{ ok: boolean }>('/api/auth/phone-verification/verify', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
   refreshSession: (refreshToken: string) =>
     apiRequest<LoginResponse>('/api/auth/refresh', {
       method: 'POST',
@@ -642,6 +677,17 @@ export const storeApi = {
     apiRequest<Record<string, unknown>>(storePath(storeId, '/settings/business'), {
       method: 'PATCH',
       body: JSON.stringify(body),
+    }),
+  checkDomainAvailability: (storeId: string, label: string) =>
+    apiRequest<{ label: string; hostname: string; available: boolean; reason?: 'reserved' | 'taken' }>(
+      storePath(storeId, `/domain-requests/check?label=${encodeURIComponent(label)}`),
+    ),
+  listDomainRequests: (storeId: string) =>
+    apiRequest<DomainRequestRow[]>(storePath(storeId, '/domain-requests')),
+  requestDomain: (storeId: string, label: string, note?: string) =>
+    apiRequest<DomainRequestRow>(storePath(storeId, '/domain-requests'), {
+      method: 'POST',
+      body: JSON.stringify({ label, note }),
     }),
   listStaff: (storeId: string) =>
     apiRequest<StaffRow[] | { data?: StaffRow[]; items?: StaffRow[] }>(

@@ -12,7 +12,7 @@ import {
   Pagination,
   useToast,
 } from '@commercenest/ui';
-import { Plus, Search } from 'lucide-react';
+import { CheckCircle2, Plus, Search, TriangleAlert } from 'lucide-react';
 import {
   adminApi,
   ApiClientError,
@@ -30,6 +30,12 @@ const statusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> =
   ARCHIVED: 'neutral',
 };
 
+const approvalTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
+  APPROVED: 'success',
+  PENDING: 'caution',
+  REJECTED: 'danger',
+};
+
 export function StoresPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -41,6 +47,8 @@ export function StoresPage() {
   const [suspendTarget, setSuspendTarget] = useState<StoreRow | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
   const [archiveTarget, setArchiveTarget] = useState<StoreRow | null>(null);
+  const [rejectApprovalTarget, setRejectApprovalTarget] = useState<StoreRow | null>(null);
+  const [rejectApprovalReason, setRejectApprovalReason] = useState('');
   const [form, setForm] = useState({
     name: '',
     slug: '',
@@ -96,6 +104,36 @@ export function StoresPage() {
     onError: (err) =>
       toast({
         title: 'Archive failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const approveMut = useMutation({
+    mutationFn: (id: string) => adminApi.approveStore(id),
+    onSuccess: () => {
+      toast({ title: 'Store approved', tone: 'success' });
+      void qc.invalidateQueries({ queryKey: ['admin', 'stores'] });
+    },
+    onError: (err) =>
+      toast({
+        title: 'Approve failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const rejectApprovalMut = useMutation({
+    mutationFn: () => adminApi.rejectStoreApproval(rejectApprovalTarget!.id, rejectApprovalReason || undefined),
+    onSuccess: () => {
+      toast({ title: 'Approval rejected', tone: 'caution' });
+      setRejectApprovalTarget(null);
+      setRejectApprovalReason('');
+      void qc.invalidateQueries({ queryKey: ['admin', 'stores'] });
+    },
+    onError: (err) =>
+      toast({
+        title: 'Reject failed',
         description: err instanceof ApiClientError ? err.message : 'Unknown error',
         tone: 'danger',
       }),
@@ -178,6 +216,35 @@ export function StoresPage() {
               header: 'Status',
               cell: (r) => <Badge tone={statusTone[r.status] || 'neutral'}>{r.status}</Badge>,
             },
+            {
+              key: 'approval',
+              header: 'Approval / Verification',
+              cell: (r) => (
+                <div className="space-y-1">
+                  <Badge tone={approvalTone[r.approvalStatus || 'APPROVED'] || 'neutral'}>
+                    {r.approvalStatus || 'APPROVED'}
+                  </Badge>
+                  <div className="flex gap-2 text-xs text-ink-tertiary">
+                    <span className="flex items-center gap-0.5" title="Owner email verification">
+                      {r.owner?.emailVerified ? (
+                        <CheckCircle2 className="size-3 text-emerald-600" />
+                      ) : (
+                        <TriangleAlert className="size-3 text-amber-500" />
+                      )}
+                      Email
+                    </span>
+                    <span className="flex items-center gap-0.5" title="Owner phone verification">
+                      {r.owner?.phoneVerified ? (
+                        <CheckCircle2 className="size-3 text-emerald-600" />
+                      ) : (
+                        <TriangleAlert className="size-3 text-amber-500" />
+                      )}
+                      Phone
+                    </span>
+                  </div>
+                </div>
+              ),
+            },
             { key: 'plan', header: 'Plan', cell: (r) => r.planTier || '-' },
             { key: 'created', header: 'Created', cell: (r) => formatDate(r.createdAt) },
             {
@@ -191,6 +258,21 @@ export function StoresPage() {
                   <Button size="sm" variant="ghost" onClick={() => navigate(`/themes/${r.id}`)}>
                     Edit Theme
                   </Button>
+                  {r.approvalStatus !== 'APPROVED' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={approveMut.isPending && approveMut.variables === r.id}
+                      onClick={() => approveMut.mutate(r.id)}
+                    >
+                      Approve
+                    </Button>
+                  ) : null}
+                  {r.approvalStatus !== 'REJECTED' ? (
+                    <Button size="sm" variant="ghost" onClick={() => setRejectApprovalTarget(r)}>
+                      Reject
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -308,6 +390,36 @@ export function StoresPage() {
             </select>
           </FormField>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!rejectApprovalTarget}
+        onClose={() => setRejectApprovalTarget(null)}
+        title="Reject approval"
+        description={`Reject ${rejectApprovalTarget?.name ?? 'this store'}'s approval? The store stays live — this only marks it as not (yet) an approved CommerceNest customer.`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRejectApprovalTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={rejectApprovalMut.isPending}
+              onClick={() => rejectApprovalMut.mutate()}
+            >
+              Reject
+            </Button>
+          </>
+        }
+      >
+        <FormField label="Reason (optional)" htmlFor="rejectApprovalReason">
+          <Input
+            id="rejectApprovalReason"
+            value={rejectApprovalReason}
+            onChange={(e) => setRejectApprovalReason(e.target.value)}
+            placeholder="Suspicious catalog, incomplete details..."
+          />
+        </FormField>
       </Modal>
 
       <Modal

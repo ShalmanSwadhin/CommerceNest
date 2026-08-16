@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { canAccess, type NavKey } from './lib/rbac';
 import { LoginPage } from './pages/LoginPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { ProductsPage } from './pages/ProductsPage';
@@ -48,6 +49,19 @@ function hasHandoffCodeInUrl() {
   return new URLSearchParams(window.location.search).has('impersonation_handoff');
 }
 
+// Wired at module scope, not inside a useEffect — an effect runs after the
+// first render/paint, leaving a window where an already-`enabled` query
+// (e.g. a /me call right after a page reload) fires through apiRequest()
+// before the token getter is set, silently omitting the Authorization
+// header and logging the user out via the resulting 401.
+configureApiAuth({
+  getAccessToken: () => useAuthStore.getState().accessToken,
+  getRefreshToken: () => useAuthStore.getState().refreshToken,
+  onUnauthorized: () => useAuthStore.getState().clearSession(),
+  onTokenRefreshed: (accessToken, refreshToken) =>
+    useAuthStore.getState().updateTokens(accessToken, refreshToken),
+});
+
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   // Lazy initializer: runs synchronously during the first render, before
   // `children` (the router) ever mounts. This matters because a plain
@@ -67,14 +81,6 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const handoffStartedRef = useRef(false);
 
   useEffect(() => {
-    configureApiAuth({
-      getAccessToken: () => useAuthStore.getState().accessToken,
-      getRefreshToken: () => useAuthStore.getState().refreshToken,
-      onUnauthorized: () => useAuthStore.getState().clearSession(),
-      onTokenRefreshed: (accessToken, refreshToken) =>
-        useAuthStore.getState().updateTokens(accessToken, refreshToken),
-    });
-
     const params = new URLSearchParams(window.location.search);
 
     // Impersonation handoff: Master Admin opens this app with a short-lived,
@@ -162,6 +168,7 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
                   <Route index element={<DashboardPage />} />

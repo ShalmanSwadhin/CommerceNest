@@ -56,6 +56,31 @@ enum SslStatus {
   EXPIRED
 }
 
+/** Admin gate for a merchant/store becoming a fully trusted CommerceNest
+ * customer — independent of email/phone verification (see Store.approvalStatus
+ * doc comment). Existing stores default to APPROVED (they're already live);
+ * trial.service.ts explicitly sets PENDING for new self-serve trial signups. */
+enum StoreApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/** Lifecycle of a request for an allocated commercenest.* subdomain — see
+ * DomainRequest's doc comment. Distinct from DomainStatus (which describes
+ * an already-provisioned StoreDomain's DNS/SSL state). */
+enum DomainRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ASSIGNED
+}
+
+enum EmailVerificationSubject {
+  USER
+  CUSTOMER
+}
+
 enum CustomerRiskLevel {
   NONE
   CAUTION
@@ -185,11 +210,16 @@ model User {
   status           UserStatus @default(INVITED)
   inviteTokenHash  String?
   inviteExpiresAt  DateTime?
+  /** Independent of `status`/approval — see Store.approvalStatus. A merchant
+   * can be ACTIVE + approved while still emailVerified: false. */
+  emailVerified    Boolean    @default(false)
+  phoneVerified    Boolean    @default(false)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
   store                    Store?                 @relation("StoreStaff", fields: [storeId], references: [id], onDelete: SetNull)
   ownedStores              Store[]                @relation("StoreOwner")
+  storesApproved           Store[]                @relation("StoreApprovedBy")
   storefrontVersionsCreated StorefrontVersion[]   @relation("StorefrontVersionCreator")
   templatesCreated         Template[]             @relation("TemplateCreator")
   announcementsCreated     Announcement[]         @relation("AnnouncementCreator")
@@ -201,6 +231,7 @@ model User {
   supportTicketsRequested  SupportTicket[]        @relation("SupportTicketRequester")
   supportReplies           SupportReply[]         @relation("SupportReplyAuthor")
   trialLeadsReviewed       TrialLead[]            @relation("TrialLeadReviewer")
+  domainRequestsReviewed   DomainRequest[]        @relation("DomainRequestReviewer")
 
   @@index([storeId])
   @@index([phone])
@@ -233,12 +264,21 @@ model Store {
   isTrial            Boolean     @default(false)
   trialStartedAt     DateTime?
   trialExpiresAt     DateTime?
+  /** Independent of verification — see User.emailVerified/phoneVerified on
+   * the owner. Master Admin can approve an unverified merchant; approving
+   * never flips verification flags, and verifying never flips this. */
+  approvalStatus     StoreApprovalStatus @default(APPROVED)
+  approvedById       String?
+  approvedAt         DateTime?
+  approvalReason     String?     @db.Text
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
   owner              User               @relation("StoreOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  approvedBy         User?              @relation("StoreApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   staff              User[]             @relation("StoreStaff")
   domains            StoreDomain[]
+  domainRequests     DomainRequest[]
   customers          Customer[]
   customerAddresses  CustomerAddress[]
   categories         Category[]
@@ -266,6 +306,7 @@ model Store {
   @@index([ownerUserId])
   @@index([createdAt])
   @@index([isTrial, trialExpiresAt])
+  @@index([approvalStatus])
   @@map("stores")
 }
 
@@ -288,6 +329,64 @@ model StoreDomain {
   @@map("store_domains")
 }
 
+/**
+ * A merchant asking for an allocated slice of the shared CommerceNest
+ * namespace (e.g. "techworld" -> techworld.commercenest.com) — distinct
+ * from StoreDomain/domain.service.ts's existing self-service "bring your
+ * own custom domain + verify via token challenge" flow, which stays
+ * untouched. Requesting a CommerceNest-branded subdomain is curated
+ * (Master Admin approves/assigns) since it's a shared, brand-carrying
+ * namespace, unlike a merchant's own domain that they already own.
+ * On ASSIGNED, a real StoreDomain row is created directly as
+ * VERIFIED/ACTIVE (admin-assigned, so no challenge token needed — same
+ * trust level as the auto-provisioned trial subdomain).
+ */
+model DomainRequest {
+  id                String              @id @default(cuid())
+  storeId           String
+  requestedLabel    String
+  requestedHostname String
+  status            DomainRequestStatus @default(PENDING)
+  note              String?             @db.Text
+  reviewedById      String?
+  reviewedAt        DateTime?
+  rejectionReason   String?             @db.Text
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  store      Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("DomainRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([storeId])
+  @@index([status])
+  @@map("domain_requests")
+}
+
+/**
+ * Shared by both User (merchant) and Customer (storefront shopper) email
+ * verification — one reusable token model instead of duplicating
+ * hash/expiry fields on two different tables. Mirrors the existing
+ * User.inviteTokenHash pattern (bcrypt hash via lib/password.ts, never
+ * plaintext at rest).
+ */
+model EmailVerificationToken {
+  id          String                     @id @default(cuid())
+  tokenHash   String
+  subjectType EmailVerificationSubject
+  subjectId   String
+  /** Snapshot of the email being verified — if the account's email changes
+   * before the link is used, the token becomes meaningless (see service
+   * logic), it doesn't silently verify whatever the email is *now*. */
+  email       String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime                   @default(now())
+
+  @@index([subjectType, subjectId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
 // ---------------------------------------------------------------------------
 // Customers
 // ---------------------------------------------------------------------------
@@ -295,10 +394,16 @@ model StoreDomain {
 model Customer {
   id               String            @id @default(cuid())
   storeId          String
-  phone            String
+  /** Nullable — an email+password-registered customer may have no phone on
+   * file until they optionally verify one (see AUTHENTICATION_ARCHITECTURE.md).
+   * Postgres allows multiple NULLs under a unique index, so this still
+   * prevents two customers at the same store sharing one real phone number. */
+  phone            String?
   name             String
   email            String?
   passwordHash     String?
+  emailVerified    Boolean           @default(false)
+  phoneVerified    Boolean           @default(false)
   riskLevel        CustomerRiskLevel @default(NONE)
   totalOrders      Int               @default(0)
   deliveredOrders  Int               @default(0)
@@ -313,6 +418,7 @@ model Customer {
   returnRequests    ReturnRequest[]
 
   @@unique([storeId, phone])
+  @@unique([storeId, email])
   @@index([storeId, createdAt])
   @@index([storeId, riskLevel])
   @@index([storeId, phone])

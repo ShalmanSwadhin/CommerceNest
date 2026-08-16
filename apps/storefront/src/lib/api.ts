@@ -232,6 +232,15 @@ export interface LookupOrder {
   items?: Array<{ productName?: string; quantity: number }>;
 }
 
+export interface CustomerProfile {
+  id: string;
+  name?: string;
+  phone?: string | null;
+  email?: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+}
+
 export interface AccountOrder {
   id: string;
   orderNumber?: string;
@@ -347,14 +356,60 @@ export const storefrontApi = {
   otpVerify: (slug: string, phone: string, code: string) =>
     apiRequest<{
       accessToken?: string;
-      customer?: { id: string; name?: string; phone: string };
+      customer?: CustomerProfile;
     }>(sf(slug, '/auth/otp/verify'), {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
+  // Name/email/password — the primary storefront login method. Phone OTP
+  // above remains an independent, equally-real second login method.
+  register: (
+    slug: string,
+    body: { name: string; email: string; password: string; confirmPassword: string; phone?: string },
+  ) =>
+    apiRequest<{ accessToken: string; customer: CustomerProfile }>(sf(slug, '/auth/register'), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  login: (slug: string, email: string, password: string) =>
+    apiRequest<{ accessToken: string; customer: CustomerProfile }>(sf(slug, '/auth/login'), {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  requestPasswordReset: (slug: string, email: string) =>
+    apiRequest<{ ok: boolean; message: string; devToken?: string }>(
+      sf(slug, '/auth/password/reset-request'),
+      { method: 'POST', body: JSON.stringify({ email }) },
+    ),
+  confirmPasswordReset: (slug: string, token: string, password: string) =>
+    apiRequest<{ ok: boolean }>(sf(slug, '/auth/password/reset-confirm'), {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+  // Optional post-login verification — available regardless of login method.
+  sendEmailVerification: (slug: string) =>
+    apiRequest<{ ok: boolean; message: string; alreadyVerified?: boolean; devLink?: string }>(
+      sf(slug, '/account/email-verification/send'),
+      { method: 'POST' },
+    ),
+  confirmEmailVerification: (slug: string, token: string) =>
+    apiRequest<{ ok: boolean }>(sf(slug, '/account/email-verification/verify'), {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  sendPhoneVerification: (slug: string, phone: string) =>
+    apiRequest<{ ok: boolean; message: string; devCode?: string }>(
+      sf(slug, '/account/phone-verification/send'),
+      { method: 'POST', body: JSON.stringify({ phone }) },
+    ),
+  confirmPhoneVerification: (slug: string, phone: string, code: string) =>
+    apiRequest<{ ok: boolean }>(sf(slug, '/account/phone-verification/verify'), {
       method: 'POST',
       body: JSON.stringify({ phone, code }),
     }),
   profile: (slug: string) =>
     apiRequest<{
-      customer?: { id: string; name?: string; phone: string; email?: string | null };
+      customer?: CustomerProfile;
       id?: string;
       name?: string;
       phone?: string;

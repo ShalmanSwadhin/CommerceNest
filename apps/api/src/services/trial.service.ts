@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
+  passwordSchema,
+  StoreApprovalStatus,
   StoreStatus,
   TrialLeadStatus,
   UserRole,
@@ -10,22 +12,34 @@ import { prisma } from '../lib/prisma.js';
 import { env } from '../lib/env.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
-import { createInviteToken } from './auth.service.js';
 import { writeAuditLog } from './audit.service.js';
 import { defaultLayout, defaultTheme } from './store.service.js';
+import { hashPassword } from '../lib/password.js';
 
 const DEFAULT_TRIAL_DURATION_DAYS = 7;
 const TRIAL_DURATION_SETTING_KEY = 'trial.defaultDurationDays';
 
-const createTrialLeadSchema = z.object({
-  prospectName: z.string().trim().min(2).max(120),
-  businessName: z.string().trim().min(2).max(150),
-  phone: z.string().trim().min(6).max(20),
-  email: z.string().trim().email().max(200),
-  category: z.string().trim().max(80).optional(),
-  catalogSize: z.string().trim().max(40).optional(),
-  message: z.string().trim().max(2000).optional(),
-});
+const createTrialLeadSchema = z
+  .object({
+    prospectName: z.string().trim().min(2).max(120),
+    businessName: z.string().trim().min(2).max(150),
+    phone: z.string().trim().min(6).max(20),
+    email: z.string().trim().email().max(200),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+    category: z.string().trim().max(80).optional(),
+    catalogSize: z.string().trim().max(40).optional(),
+    message: z.string().trim().max(2000).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      });
+    }
+  });
 
 /**
  * Trial duration is Master Admin-configurable via the existing
@@ -92,6 +106,16 @@ function trialUrlFor(hostname: string) {
 export async function createTrialLead(input: unknown) {
   const data = createTrialLeadSchema.parse(input);
 
+  const existingOwner = await prisma.user.findUnique({
+    where: { email: data.email },
+    select: { id: true },
+  });
+  if (existingOwner) {
+    throw AppError.conflict(
+      'An account with this email already exists. Try logging in instead.',
+    );
+  }
+
   const slug = await generateUniqueTrialSlug();
   const hostname = trialHostnameFor(slug);
   const trialDurationDays = await getDefaultTrialDurationDays();
@@ -99,18 +123,23 @@ export async function createTrialLead(input: unknown) {
   const trialExpiresAt = new Date(
     now.getTime() + trialDurationDays * 24 * 60 * 60 * 1000,
   );
-  const invite = await createInviteToken();
+  const passwordHash = await hashPassword(data.password);
 
   const result = await prisma.$transaction(async (tx) => {
+    // ACTIVE with a real password immediately — unlike the Master-Admin
+    // -driven "invite a store owner" path (store.service.ts#createStore),
+    // this is self-serve signup: the merchant sets their own password right
+    // now and must be able to log into store-dashboard immediately, not
+    // wait on an invite-token email that (for the trial path specifically)
+    // nothing ever sends.
     const owner = await tx.user.create({
       data: {
         email: data.email,
         name: data.prospectName,
         phone: data.phone,
         role: UserRole.STORE_OWNER,
-        status: UserStatus.INVITED,
-        inviteTokenHash: invite.hash,
-        inviteExpiresAt: invite.expiresAt,
+        status: UserStatus.ACTIVE,
+        passwordHash,
       },
     });
 
@@ -119,6 +148,13 @@ export async function createTrialLead(input: unknown) {
         name: data.businessName,
         slug,
         status: StoreStatus.ACTIVE,
+        // Independent of the store being immediately live/usable — Master
+        // Admin still reviews self-serve trial signups before they're a
+        // fully trusted CommerceNest customer (see AUTHENTICATION_ARCHITECTURE.md
+        // "Verification vs Approval"). Master-Admin-initiated store creation
+        // (store.service.ts#createStore) defaults to APPROVED instead, since
+        // an admin creating the store directly is itself the vetting step.
+        approvalStatus: StoreApprovalStatus.PENDING,
         ownerUserId: owner.id,
         category: data.category,
         planTier: 'starter',

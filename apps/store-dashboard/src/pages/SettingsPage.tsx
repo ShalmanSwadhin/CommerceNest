@@ -13,6 +13,8 @@ import {
 import { ApiClientError, storeApi } from '../lib/api';
 import { ErrorState, PageSkeleton } from '../components/QueryState';
 import { useStoreId } from '../stores/authStore';
+import { MerchantVerificationCard } from '../components/MerchantVerificationCard';
+import { DomainRequestCard } from '../components/DomainRequestCard';
 
 const STAFF_ROLES = [
   'STORE_MANAGER',
@@ -176,6 +178,10 @@ export function SettingsPage() {
           Save settings
         </Button>
       </Card>
+
+      <MerchantVerificationCard />
+
+      <DomainRequestCard />
 
       <Card elevated className="max-w-2xl space-y-3">
         <h3 className="font-semibold">Delivery charges</h3>

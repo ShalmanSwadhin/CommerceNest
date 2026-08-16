@@ -754,6 +754,34 @@ storeRouter.post(
   }),
 );
 
+// CommerceNest-namespace domain requests — distinct from the self-service
+// "bring your own domain" flow above (see domain.service.ts doc comment).
+storeRouter.get(
+  '/domain-requests/check',
+  asyncHandler(async (req, res) => {
+    const label = z.string().trim().min(1).parse(req.query.label);
+    res.json(await domainService.checkDomainLabelAvailability(label));
+  }),
+);
+
+storeRouter.get(
+  '/domain-requests',
+  asyncHandler(async (req, res) => {
+    res.json(await domainService.listMyDomainRequests(scopedStoreId(req)));
+  }),
+);
+
+storeRouter.post(
+  '/domain-requests',
+  requireRoles(UserRole.STORE_OWNER, UserRole.MASTER_ADMIN),
+  rateLimit({ windowSeconds: 3600, max: 10, keyPrefix: 'rl:domain-request-create' }),
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(await domainService.requestDomain(scopedStoreId(req), req.body, actor(req)));
+  }),
+);
+
 // Platform announcements (read-only for store staff)
 storeRouter.get(
   '/announcements',

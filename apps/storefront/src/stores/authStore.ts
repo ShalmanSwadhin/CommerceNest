@@ -4,8 +4,10 @@ import { persist } from 'zustand/middleware';
 interface Customer {
   id: string;
   name?: string;
-  phone: string;
+  phone?: string | null;
   email?: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 }
 
 interface AuthState {

@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { bangladeshPhoneSchema } from '@commercenest/types';
+import {
+  bangladeshPhoneSchema,
+  customerLoginSchema,
+  customerRegisterSchema,
+  customerRequestPasswordResetSchema,
+  customerResetPasswordSchema,
+  EmailVerificationSubject,
+} from '@commercenest/types';
 import { asyncHandler, AppError } from '../lib/errors.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { requireCustomer } from '../middleware/auth.js';
@@ -9,6 +16,7 @@ import * as paymentService from '../services/payment.service.js';
 import * as domainService from '../services/domain.service.js';
 import * as seoService from '../services/seo.service.js';
 import * as returnService from '../services/return.service.js';
+import * as verificationService from '../services/verification.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -277,6 +285,178 @@ storefrontRouter.post(
     res.json(
       await storefrontService.verifyOtp(
         param(req, 'storeSlug'),
+        body.phone,
+        body.code,
+      ),
+    );
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Name/email/password auth — the PRIMARY storefront login method. Phone OTP
+// above remains available independently (a second login method, and — once
+// authenticated — an optional verification add-on, see /account/*-verification
+// below). Neither replaces the other.
+// ---------------------------------------------------------------------------
+
+storefrontRouter.post(
+  '/auth/register',
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:customer-register' }),
+  asyncHandler(async (req, res) => {
+    const data = customerRegisterSchema.parse(req.body);
+    res.status(201).json(
+      await storefrontService.registerCustomer(param(req, 'storeSlug'), {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        phone: data.phone,
+      }),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/auth/login',
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:customer-login' }),
+  asyncHandler(async (req, res) => {
+    const data = customerLoginSchema.parse(req.body);
+    res.json(
+      await storefrontService.loginCustomer(param(req, 'storeSlug'), data),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/auth/password/reset-request',
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:customer-pwdreset' }),
+  asyncHandler(async (req, res) => {
+    const data = customerRequestPasswordResetSchema.parse(req.body);
+    res.json(
+      await storefrontService.requestCustomerPasswordReset(
+        param(req, 'storeSlug'),
+        data.email,
+      ),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/auth/password/reset-confirm',
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:customer-pwdreset-confirm' }),
+  asyncHandler(async (req, res) => {
+    const data = customerResetPasswordSchema.parse(req.body);
+    res.json(
+      await storefrontService.confirmCustomerPasswordReset(
+        param(req, 'storeSlug'),
+        data.token,
+        data.password,
+      ),
+    );
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Optional post-login verification — available to a customer regardless of
+// which login method they used. Reuses verification.service.ts (email
+// tokens) and lib/otp.ts via verification.service.ts (phone OTP) — no
+// separate implementation.
+// ---------------------------------------------------------------------------
+
+storefrontRouter.post(
+  '/account/email-verification/send',
+  requireCustomer,
+  rateLimit({ windowSeconds: 60, max: 5, keyPrefix: 'rl:customer-email-verify-send' }),
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    const profile = await storefrontService.getCustomerProfile(
+      param(req, 'storeSlug'),
+      req.customer.id,
+    );
+    if (!profile.email) {
+      throw AppError.badRequest('Add an email address to your account first.');
+    }
+    if (profile.emailVerified) {
+      res.json({ ok: true, message: 'Email already verified.', alreadyVerified: true });
+      return;
+    }
+    // Storefront requests already arrive on the tenant subdomain (e.g.
+    // techworld-bd.localhost:8080) — same-origin as the page the link
+    // should return the customer to, so no separate config is needed here.
+    const origin = `${req.protocol}://${req.get('host')}`;
+    res.json(
+      await verificationService.sendEmailVerification({
+        subjectType: EmailVerificationSubject.CUSTOMER,
+        subjectId: req.customer.id,
+        email: profile.email,
+        name: profile.name,
+        verifyUrlBase: `${origin}/verify-email`,
+      }),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/account/email-verification/verify',
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:customer-email-verify-confirm' }),
+  asyncHandler(async (req, res) => {
+    const token = z.string().trim().min(1).parse(req.body?.token);
+    res.json(
+      await verificationService.confirmEmailVerification(
+        EmailVerificationSubject.CUSTOMER,
+        token,
+      ),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/account/phone-verification/send',
+  requireCustomer,
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:customer-phone-verify-send' }),
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    const phone = bangladeshPhoneSchema.parse(req.body?.phone);
+    res.json(
+      await verificationService.sendPhoneVerificationOtp(
+        EmailVerificationSubject.CUSTOMER,
+        req.customer.id,
+        phone,
+      ),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/account/phone-verification/verify',
+  requireCustomer,
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:customer-phone-verify-confirm:ip' }),
+  rateLimit({
+    windowSeconds: 600,
+    max: 8,
+    keyPrefix: 'rl:customer-phone-verify-confirm:customer',
+    keyFn: (req) => String(req.customer?.id ?? 'unknown'),
+  }),
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    const body = z
+      .object({ phone: bangladeshPhoneSchema, code: z.string().trim().min(4).max(8) })
+      .parse(req.body);
+    res.json(
+      await verificationService.confirmPhoneVerificationOtp(
+        EmailVerificationSubject.CUSTOMER,
+        req.customer.id,
         body.phone,
         body.code,
       ),

@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { bangladeshPhoneSchema, EmailVerificationSubject } from '@commercenest/types';
 import { asyncHandler, AppError } from '../lib/errors.js';
 import { env } from '../lib/env.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { requireAuth } from '../middleware/auth.js';
 import * as authService from '../services/auth.service.js';
 import * as impersonationService from '../services/impersonation.service.js';
+import * as verificationService from '../services/verification.service.js';
 
 export const authRouter = Router();
 
@@ -87,6 +89,94 @@ authRouter.get(
       throw AppError.unauthorized();
     }
     res.json({ user: authService.getMe(req.user) });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Optional account verification — a merchant/staff account is fully usable
+// (log in, run their store) without ever touching these; see
+// AUTHENTICATION_ARCHITECTURE.md "Verification vs Approval". Reuses
+// verification.service.ts's email tokens and lib/otp.ts's OTP core — same
+// infrastructure the storefront customer flow uses, not a second one.
+// ---------------------------------------------------------------------------
+
+authRouter.post(
+  '/email-verification/send',
+  requireAuth,
+  rateLimit({ windowSeconds: 60, max: 5, keyPrefix: 'rl:staff-email-verify-send' }),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw AppError.unauthorized();
+    if (req.user.emailVerified) {
+      res.json({ ok: true, message: 'Email already verified.', alreadyVerified: true });
+      return;
+    }
+    const origin = `${req.protocol}://${req.get('host')}`;
+    res.json(
+      await verificationService.sendEmailVerification({
+        subjectType: EmailVerificationSubject.USER,
+        subjectId: req.user.id,
+        email: req.user.email,
+        name: req.user.name,
+        verifyUrlBase: `${origin}/verify-email`,
+      }),
+    );
+  }),
+);
+
+authRouter.post(
+  '/email-verification/verify',
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:staff-email-verify-confirm' }),
+  asyncHandler(async (req, res) => {
+    const token = z.string().trim().min(1).parse(req.body?.token);
+    res.json(
+      await verificationService.confirmEmailVerification(
+        EmailVerificationSubject.USER,
+        token,
+      ),
+    );
+  }),
+);
+
+authRouter.post(
+  '/phone-verification/send',
+  requireAuth,
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:staff-phone-verify-send' }),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw AppError.unauthorized();
+    const phone = bangladeshPhoneSchema.parse(req.body?.phone);
+    res.json(
+      await verificationService.sendPhoneVerificationOtp(
+        EmailVerificationSubject.USER,
+        req.user.id,
+        phone,
+      ),
+    );
+  }),
+);
+
+authRouter.post(
+  '/phone-verification/verify',
+  requireAuth,
+  rateLimit({ windowSeconds: 60, max: 20, keyPrefix: 'rl:staff-phone-verify-confirm:ip' }),
+  rateLimit({
+    windowSeconds: 600,
+    max: 8,
+    keyPrefix: 'rl:staff-phone-verify-confirm:user',
+    keyFn: (req) => String(req.user?.id ?? 'unknown'),
+  }),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw AppError.unauthorized();
+    const body = z
+      .object({ phone: bangladeshPhoneSchema, code: z.string().trim().min(4).max(8) })
+      .parse(req.body);
+    res.json(
+      await verificationService.confirmPhoneVerificationOtp(
+        EmailVerificationSubject.USER,
+        req.user.id,
+        body.phone,
+        body.code,
+      ),
+    );
   }),
 );
 

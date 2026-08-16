@@ -496,7 +496,7 @@ async function main() {
   if (!deliveredExists) {
     const cust = await ensureCustomer(
       rahim.store.id,
-      highRiskCustomer.phone,
+      highRiskCustomer.phone!,
       highRiskCustomer.name,
       {
         totalOrders: 5,

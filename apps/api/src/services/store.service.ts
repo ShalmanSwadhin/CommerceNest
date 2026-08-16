@@ -1,5 +1,6 @@
 import {
   createStoreSchema,
+  StoreApprovalStatus,
   StoreStatus,
   UserRole,
   UserStatus,
@@ -152,6 +153,7 @@ export async function createStore(
 
 export async function listStores(params: {
   status?: string;
+  approvalStatus?: string;
   page?: number;
   limit?: number;
   search?: string;
@@ -160,6 +162,7 @@ export async function listStores(params: {
   const limit = params.limit ?? 20;
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
+  if (params.approvalStatus) where.approvalStatus = params.approvalStatus;
   if (params.search) {
     where.OR = [
       { name: { contains: params.search, mode: 'insensitive' } },
@@ -174,7 +177,17 @@ export async function listStores(params: {
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        owner: { select: { id: true, email: true, name: true } },
+        owner: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            emailVerified: true,
+            phoneVerified: true,
+          },
+        },
+        approvedBy: { select: { id: true, name: true } },
         _count: { select: { products: true, orders: true, customers: true } },
       },
     }),
@@ -259,6 +272,73 @@ export async function reactivateStore(
     storeId,
     ip: actor.ip,
     userAgent: actor.userAgent,
+  });
+
+  return store;
+}
+
+/**
+ * Approval is independent of email/phone verification (see
+ * AUTHENTICATION_ARCHITECTURE.md) — Master Admin can approve a merchant who
+ * has verified nothing at all; this never touches User.emailVerified/
+ * phoneVerified, and verifying never touches Store.approvalStatus. Both are
+ * genuinely separate axes, not a workflow gate on each other.
+ */
+export async function approveStore(
+  storeId: string,
+  reason: string | undefined,
+  actor: { id: string; role: string; ip?: string; userAgent?: string },
+) {
+  const store = await prisma.store.update({
+    where: { id: storeId },
+    data: {
+      approvalStatus: StoreApprovalStatus.APPROVED,
+      approvedById: actor.id,
+      approvedAt: new Date(),
+      approvalReason: reason,
+    },
+  });
+
+  await writeAuditLog({
+    actorId: actor.id,
+    actorRole: actor.role as never,
+    action: 'STORE_APPROVED',
+    targetType: 'Store',
+    targetId: storeId,
+    storeId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    metadata: { reason: reason ?? null },
+  });
+
+  return store;
+}
+
+export async function rejectStoreApproval(
+  storeId: string,
+  reason: string | undefined,
+  actor: { id: string; role: string; ip?: string; userAgent?: string },
+) {
+  const store = await prisma.store.update({
+    where: { id: storeId },
+    data: {
+      approvalStatus: StoreApprovalStatus.REJECTED,
+      approvedById: actor.id,
+      approvedAt: new Date(),
+      approvalReason: reason,
+    },
+  });
+
+  await writeAuditLog({
+    actorId: actor.id,
+    actorRole: actor.role as never,
+    action: 'STORE_APPROVAL_REJECTED',
+    targetType: 'Store',
+    targetId: storeId,
+    storeId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    metadata: { reason: reason ?? null },
   });
 
   return store;

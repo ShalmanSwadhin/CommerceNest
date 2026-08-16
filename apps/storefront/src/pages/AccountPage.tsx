@@ -19,6 +19,7 @@ import {
   type AccountOrder,
   type StorefrontStore,
 } from '../lib/api';
+import { VerificationSection } from '../components/VerificationSection';
 import { formatBdt, formatDate } from '../lib/format';
 import { canonicalUrl } from '../lib/seo';
 import { useStoreSlug } from '../lib/storeSlug';
@@ -91,7 +92,7 @@ export function AccountPage() {
       <div className="mx-auto max-w-md px-4 py-12">
         {helmet}
         <Alert tone="info" title={t(locale, 'account')}>
-          Sign in with phone OTP to view your profile.
+          Sign in to view your profile.
         </Alert>
         <div className="mt-4 flex gap-2">
           <Link to="/login">
@@ -142,6 +143,17 @@ export function AccountPage() {
             Logout
           </Button>
         </div>
+      </Card>
+
+      <Card elevated>
+        <VerificationSection
+          slug={slug}
+          email={'email' in profile ? profile.email : undefined}
+          phone={profile.phone}
+          emailVerified={'emailVerified' in profile ? profile.emailVerified : undefined}
+          phoneVerified={'phoneVerified' in profile ? profile.phoneVerified : undefined}
+          onVerifiedChange={() => void q.refetch()}
+        />
       </Card>
 
       <Card elevated className="space-y-3">

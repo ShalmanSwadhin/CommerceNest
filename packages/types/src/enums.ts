@@ -50,6 +50,30 @@ export const SslStatus = {
 } as const;
 export type SslStatus = (typeof SslStatus)[keyof typeof SslStatus];
 
+export const StoreApprovalStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+export type StoreApprovalStatus =
+  (typeof StoreApprovalStatus)[keyof typeof StoreApprovalStatus];
+
+export const DomainRequestStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  ASSIGNED: 'ASSIGNED',
+} as const;
+export type DomainRequestStatus =
+  (typeof DomainRequestStatus)[keyof typeof DomainRequestStatus];
+
+export const EmailVerificationSubject = {
+  USER: 'USER',
+  CUSTOMER: 'CUSTOMER',
+} as const;
+export type EmailVerificationSubject =
+  (typeof EmailVerificationSubject)[keyof typeof EmailVerificationSubject];
+
 export const CustomerRiskLevel = {
   NONE: 'NONE',
   CAUTION: 'CAUTION',

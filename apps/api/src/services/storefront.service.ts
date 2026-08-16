@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
   BANGLADESH_PHONE_REGEX,
@@ -16,23 +17,17 @@ import { signCustomerToken } from '../lib/jwt.js';
 import { toNumber } from './order.service.js';
 import { env } from '../lib/env.js';
 import { validateCouponForOrder } from './coupon.service.js';
-import { hashToken, verifyTokenHash } from '../lib/password.js';
-import { sendSms, SmsDeliveryError, SmsProviderUnconfiguredError } from '../lib/sms.js';
+import { createAndSendOtp, consumeOtp, otpConsumeErrorMessage } from '../lib/otp.js';
+import { hashPassword, verifyPassword } from '../lib/password.js';
 
-/** OTP tuning — see SECURITY.md "OTP (storefront customers)". */
-const OTP_TTL_SECONDS = 5 * 60;
-const OTP_MAX_ATTEMPTS = 5;
-const OTP_RESEND_COOLDOWN_SECONDS = 60;
-
-interface StoredOtp {
-  /** bcrypt hash — never the plaintext code (see lib/password.ts). */
-  hash: string;
-  attempts: number;
-  /** Authoritative expiry, checked explicitly in verifyOtp. Kept separate
-   * from the kv entry's own TTL because a failed attempt re-persists the
-   * entry (to save the incremented attempt count), which would otherwise
-   * reset a plain kv TTL back to the full window on every wrong guess. */
-  expiresAt: number;
+/** Prisma unique-constraint-violation error code (P2002). */
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  );
 }
 
 /**
@@ -105,11 +100,13 @@ async function resolveStoreBySlug(
 function publicCustomer(customer: {
   id: string;
   storeId: string;
-  phone: string;
+  phone: string | null;
   name: string;
   email: string | null;
   preferredLocale?: string;
   riskLevel?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 }) {
   return {
     id: customer.id,
@@ -118,6 +115,8 @@ function publicCustomer(customer: {
     name: customer.name,
     email: customer.email,
     preferredLocale: customer.preferredLocale,
+    emailVerified: customer.emailVerified ?? false,
+    phoneVerified: customer.phoneVerified ?? false,
   };
 }
 
@@ -578,55 +577,25 @@ export async function lookupOrder(
   return order;
 }
 
+function customerOtpKeys(storeSlug: string, phone: string) {
+  return {
+    key: `otp:${storeSlug}:${phone}`,
+    cooldownKey: `otp:cooldown:${storeSlug}:${phone}`,
+  };
+}
+
 export async function requestOtp(storeSlug: string, phone: string) {
   await resolveStoreBySlug(storeSlug);
   if (!BANGLADESH_PHONE_REGEX.test(phone)) {
     throw AppError.badRequest('Invalid Bangladesh phone number');
   }
 
-  const cooldownKey = `otp:cooldown:${storeSlug}:${phone}`;
-  if (await kvGet(cooldownKey)) {
-    throw AppError.rateLimited(
-      'Please wait a moment before requesting another code',
-    );
-  }
-
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const stored: StoredOtp = {
-    hash: await hashToken(code),
-    attempts: 0,
-    expiresAt: Date.now() + OTP_TTL_SECONDS * 1000,
-  };
-  // Outer kv TTL is a generous cleanup bound, not the real expiry —
-  // stored.expiresAt is what verifyOtp actually enforces.
-  await kvSet(
-    `otp:${storeSlug}:${phone}`,
-    JSON.stringify(stored),
-    OTP_TTL_SECONDS + 60,
-  );
-
-  try {
-    await sendSms({
-      to: phone,
-      body: `Your CommerceNest verification code is ${code}. It expires in 5 minutes. Do not share this code.`,
-      templateKey: 'otp.request',
-    });
-  } catch (err) {
-    // Nothing was delivered — the stored code is unreachable by the
-    // customer, so there's no reason to keep it (or its attempt budget).
-    await kvDel(`otp:${storeSlug}:${phone}`);
-    if (
-      err instanceof SmsProviderUnconfiguredError ||
-      err instanceof SmsDeliveryError
-    ) {
-      throw AppError.serviceUnavailable(
-        'We could not send the verification code right now. Please try again shortly.',
-      );
-    }
-    throw err;
-  }
-
-  await kvSet(cooldownKey, '1', OTP_RESEND_COOLDOWN_SECONDS);
+  const { code } = await createAndSendOtp({
+    ...customerOtpKeys(storeSlug, phone),
+    phone,
+    messageFor: (c) =>
+      `Your CommerceNest verification code is ${c}. It expires in 5 minutes. Do not share this code.`,
+  });
 
   return {
     ok: true,
@@ -643,53 +612,11 @@ export async function verifyOtp(
   code: string,
 ) {
   const store = await resolveStoreBySlug(storeSlug);
-  const key = `otp:${storeSlug}:${phone}`;
-  const raw = await kvGet(key);
-  if (!raw) {
-    throw AppError.unauthorized('Invalid or expired OTP');
+  const { key } = customerOtpKeys(storeSlug, phone);
+  const result = await consumeOtp(key, code);
+  if (!result.ok) {
+    throw AppError.unauthorized(otpConsumeErrorMessage(result.reason));
   }
-
-  let stored: StoredOtp;
-  try {
-    stored = JSON.parse(raw) as StoredOtp;
-  } catch {
-    await kvDel(key);
-    throw AppError.unauthorized('Invalid or expired OTP');
-  }
-
-  if (Date.now() > stored.expiresAt || stored.attempts >= OTP_MAX_ATTEMPTS) {
-    await kvDel(key);
-    throw AppError.unauthorized(
-      stored.attempts >= OTP_MAX_ATTEMPTS
-        ? 'Too many incorrect attempts. Please request a new code.'
-        : 'Invalid or expired OTP',
-    );
-  }
-
-  const isMatch = await verifyTokenHash(code, stored.hash);
-  if (!isMatch) {
-    const attempts = stored.attempts + 1;
-    if (attempts >= OTP_MAX_ATTEMPTS) {
-      await kvDel(key);
-      throw AppError.unauthorized(
-        'Too many incorrect attempts. Please request a new code.',
-      );
-    }
-    const remainingTtl = Math.max(
-      1,
-      Math.ceil((stored.expiresAt - Date.now()) / 1000),
-    );
-    await kvSet(
-      key,
-      JSON.stringify({ ...stored, attempts }),
-      remainingTtl + 60,
-    );
-    throw AppError.unauthorized('Invalid or expired OTP');
-  }
-
-  // Correct code, consumed immediately — a second verify with the same
-  // code (replay) now finds nothing and fails like any expired OTP.
-  await kvDel(key);
 
   let customer = await prisma.customer.findUnique({
     where: { storeId_phone: { storeId: store.id, phone } },
@@ -713,6 +640,139 @@ export async function verifyOtp(
     accessToken,
     customer: publicCustomer(customer),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Customer name/email/password auth — the PRIMARY storefront login method
+// (see DECISIONS.md update in AUTHENTICATION_ARCHITECTURE.md). Phone OTP
+// above remains available as an independent second login method and as an
+// optional post-registration verification add-on — neither replaces the
+// other. No forced verification: a freshly-registered customer is
+// immediately usable (browse/cart/checkout/account), exactly like a phone
+// OTP login always has been.
+// ---------------------------------------------------------------------------
+
+const CUSTOMER_RESET_PREFIX = 'customer-pwdreset:';
+
+export async function registerCustomer(
+  storeSlug: string,
+  input: { name: string; email: string; password: string; phone?: string },
+) {
+  const store = await resolveStoreBySlug(storeSlug);
+
+  const existing = await prisma.customer.findUnique({
+    where: { storeId_email: { storeId: store.id, email: input.email } },
+  });
+  if (existing) {
+    throw AppError.conflict('An account with this email already exists.');
+  }
+
+  const passwordHash = await hashPassword(input.password);
+  let customer;
+  try {
+    customer = await prisma.customer.create({
+      data: {
+        storeId: store.id,
+        name: input.name,
+        email: input.email,
+        passwordHash,
+        phone: input.phone,
+      },
+    });
+  } catch (err) {
+    // Optional phone still can't collide with another customer at this store.
+    if (isUniqueConstraintError(err)) {
+      throw AppError.conflict(
+        'An account with this phone number already exists.',
+      );
+    }
+    throw err;
+  }
+
+  const accessToken = signCustomerToken({
+    sub: customer.id,
+    storeId: store.id,
+  });
+
+  return { accessToken, customer: publicCustomer(customer) };
+}
+
+export async function loginCustomer(
+  storeSlug: string,
+  input: { email: string; password: string },
+) {
+  const store = await resolveStoreBySlug(storeSlug);
+  const customer = await prisma.customer.findUnique({
+    where: { storeId_email: { storeId: store.id, email: input.email } },
+  });
+  if (!customer || !customer.passwordHash) {
+    throw AppError.unauthorized('Invalid email or password');
+  }
+  const ok = await verifyPassword(input.password, customer.passwordHash);
+  if (!ok) {
+    throw AppError.unauthorized('Invalid email or password');
+  }
+
+  const accessToken = signCustomerToken({
+    sub: customer.id,
+    storeId: store.id,
+  });
+
+  return { accessToken, customer: publicCustomer(customer) };
+}
+
+export async function requestCustomerPasswordReset(
+  storeSlug: string,
+  email: string,
+) {
+  const store = await resolveStoreBySlug(storeSlug);
+  const customer = await prisma.customer.findUnique({
+    where: { storeId_email: { storeId: store.id, email } },
+  });
+  // Always the same response, whether or not the account exists — avoids
+  // account enumeration (this IS a public, unauthenticated endpoint, unlike
+  // email verification's send step).
+  if (!customer || !customer.passwordHash) {
+    return {
+      ok: true,
+      message: 'If the account exists, a reset link was sent',
+    };
+  }
+
+  const token = randomBytes(32).toString('hex');
+  await kvSet(
+    `${CUSTOMER_RESET_PREFIX}${store.id}:${token}`,
+    customer.id,
+    60 * 60,
+  );
+
+  return {
+    ok: true,
+    message: 'If the account exists, a reset link was sent',
+    ...(env.NODE_ENV === 'development' || env.NODE_ENV === 'test'
+      ? { devToken: token }
+      : {}),
+  };
+}
+
+export async function confirmCustomerPasswordReset(
+  storeSlug: string,
+  token: string,
+  password: string,
+) {
+  const store = await resolveStoreBySlug(storeSlug);
+  const key = `${CUSTOMER_RESET_PREFIX}${store.id}:${token}`;
+  const customerId = await kvGet(key);
+  if (!customerId) {
+    throw AppError.badRequest('Invalid or expired reset link');
+  }
+  const passwordHash = await hashPassword(password);
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { passwordHash },
+  });
+  await kvDel(key);
+  return { ok: true };
 }
 
 export async function getCustomerProfile(
