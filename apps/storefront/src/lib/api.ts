@@ -20,6 +20,23 @@ export class ApiClientError extends Error {
   }
 }
 
+/** Zod field-level messages (e.g. the exact phone-format rule) are more
+ * actionable than the generic top-level "Validation failed", and are
+ * already customer-safe. Joins every field issue so a customer sees all of
+ * them at once instead of only the first. */
+export function describeApiError(err: unknown): string {
+  if (err instanceof ApiClientError) {
+    if (err.code === 'VALIDATION_ERROR' && Array.isArray(err.details) && err.details.length) {
+      const messages = (err.details as { field?: string; message?: string }[])
+        .map((d) => d.message)
+        .filter((m): m is string => !!m);
+      if (messages.length) return messages.join(' ');
+    }
+    return err.message;
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 type TokenGetter = () => string | null;
 let getAccessToken: TokenGetter = () => null;
 let onUnauthorized: () => void = () => undefined;

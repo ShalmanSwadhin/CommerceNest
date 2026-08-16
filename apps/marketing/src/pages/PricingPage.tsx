@@ -139,6 +139,11 @@ export function PricingPage() {
                 >
                   Start Free Trial
                 </Link>
+                <p
+                  className={`mt-2 text-center text-xs ${pkg.featured ? 'text-ink-tertiary' : 'text-white/50'}`}
+                >
+                  No credit card required
+                </p>
               </div>
             ))}
           </div>

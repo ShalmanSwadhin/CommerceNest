@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
+import { BANGLADESH_PHONE_REGEX } from '@commercenest/types';
 import {
   Alert,
   Button,
@@ -13,7 +14,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@commercenest/ui';
-import { ApiClientError, storefrontApi } from '../lib/api';
+import { describeApiError, storefrontApi } from '../lib/api';
 import { formatBdt } from '../lib/format';
 import { canonicalUrl } from '../lib/seo';
 import { useStoreSlug } from '../lib/storeSlug';
@@ -23,6 +24,17 @@ import { useLocaleStore } from '../stores/localeStore';
 
 type Step = 'address' | 'payment' | 'review' | 'bkash';
 
+/** Accepts common real-world formats (+880, 880, spaces, dashes) and
+ * normalizes to the local 01XXXXXXXXX form the API's BANGLADESH_PHONE_REGEX
+ * expects — so a customer isn't rejected at the very last step for typing
+ * their number the way they normally would. */
+function normalizeBdPhone(raw: string): string {
+  let digits = raw.trim().replace(/[\s-]/g, '');
+  if (digits.startsWith('+880')) digits = `0${digits.slice(4)}`;
+  else if (digits.startsWith('880')) digits = `0${digits.slice(3)}`;
+  return digits;
+}
+
 export function CheckoutPage() {
   const { slug } = useStoreSlug();
   const navigate = useNavigate();
@@ -31,6 +43,7 @@ export function CheckoutPage() {
   const clear = useCartStore((s) => s.clear);
   const [step, setStep] = useState<Step>('address');
   const [error, setError] = useState<string | null>(null);
+  const [addressErrors, setAddressErrors] = useState<string[]>([]);
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingOrderNumber, setPendingOrderNumber] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -44,7 +57,10 @@ export function CheckoutPage() {
     district: '',
     division: '',
     postalCode: '',
-    paymentMethod: 'MANUAL_BKASH' as 'MANUAL_BKASH' | 'CASH_ON_DELIVERY',
+    // Cash on Delivery is how most Bangladeshi customers actually check
+    // out — default to it and let bKash be an opt-in choice, not the other
+    // way around.
+    paymentMethod: 'CASH_ON_DELIVERY' as 'MANUAL_BKASH' | 'CASH_ON_DELIVERY',
     bkashTxnId: '',
     bkashSenderPhone: '',
     customerNote: '',
@@ -81,6 +97,7 @@ export function CheckoutPage() {
     mutationFn: () => {
       const includeTxn =
         form.paymentMethod === 'MANUAL_BKASH' && !!form.bkashTxnId.trim();
+      const phone = normalizeBdPhone(form.customerPhone);
       return storefrontApi.checkout(slug, {
         items: items.map((i) => ({
           productId: i.productId,
@@ -88,7 +105,7 @@ export function CheckoutPage() {
           quantity: i.quantity,
         })),
         customerName: form.customerName,
-        customerPhone: form.customerPhone,
+        customerPhone: phone,
         customerEmail: form.customerEmail || undefined,
         preferredLocale: locale,
         deliveryAddress: {
@@ -100,7 +117,7 @@ export function CheckoutPage() {
           division: form.division,
           postalCode: form.postalCode || undefined,
           recipientName: form.customerName,
-          recipientPhone: form.customerPhone,
+          recipientPhone: phone,
         },
         paymentMethod: form.paymentMethod,
         customerNote: form.customerNote || undefined,
@@ -108,7 +125,7 @@ export function CheckoutPage() {
         ...(includeTxn
           ? {
               bkashTxnId: form.bkashTxnId,
-              bkashSenderPhone: form.bkashSenderPhone || form.customerPhone,
+              bkashSenderPhone: normalizeBdPhone(form.bkashSenderPhone || form.customerPhone),
               bkashAmount: total,
             }
           : {}),
@@ -139,7 +156,7 @@ export function CheckoutPage() {
       });
     },
     onError: (err) => {
-      setError(err instanceof ApiClientError ? err.message : 'Checkout failed');
+      setError(describeApiError(err));
     },
   });
 
@@ -148,12 +165,12 @@ export function CheckoutPage() {
       storefrontApi.submitBkashPayment(slug, {
         orderId: pendingOrderId,
         bkashTxnId: form.bkashTxnId,
-        bkashSenderPhone: form.bkashSenderPhone || form.customerPhone,
+        bkashSenderPhone: normalizeBdPhone(form.bkashSenderPhone || form.customerPhone),
         bkashAmount: total,
       }),
     onSuccess: () => finish(pendingOrderNumber || undefined, pendingOrderId || undefined),
     onError: (err) => {
-      setError(err instanceof ApiClientError ? err.message : 'bKash submit failed');
+      setError(describeApiError(err));
     },
   });
 
@@ -177,8 +194,23 @@ export function CheckoutPage() {
     );
   }
 
-  const set = (key: keyof typeof form, value: string) =>
+  const set = (key: keyof typeof form, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
+    if (addressErrors.length) setAddressErrors([]);
+  };
+
+  const validateAddress = (): string[] => {
+    const errs: string[] = [];
+    if (!form.customerName.trim()) errs.push('Full name is required.');
+    if (!BANGLADESH_PHONE_REGEX.test(normalizeBdPhone(form.customerPhone))) {
+      errs.push('Enter a valid Bangladesh mobile number (e.g. 01712345678).');
+    }
+    if (!form.line1.trim()) errs.push('Address line 1 is required.');
+    if (!form.area.trim()) errs.push('Area is required.');
+    if (!form.district.trim()) errs.push('District is required.');
+    if (!form.division.trim()) errs.push('Division is required.');
+    return errs;
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -206,6 +238,15 @@ export function CheckoutPage() {
 
       {step === 'address' && (
         <Card elevated className="space-y-3">
+          {addressErrors.length > 0 && (
+            <Alert tone="danger" title="Please fix the following">
+              <ul className="list-disc space-y-0.5 pl-4">
+                {addressErrors.map((msg) => (
+                  <li key={msg}>{msg}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
           {(
             [
               ['customerName', 'Full name'],
@@ -220,10 +261,23 @@ export function CheckoutPage() {
             ] as const
           ).map(([key, label]) => (
             <FormField key={key} label={label} htmlFor={key}>
-              <Input id={key} value={form[key]} onChange={(e) => set(key, e.target.value)} />
+              <Input
+                id={key}
+                value={form[key]}
+                onChange={(e) => set(key, e.target.value)}
+                placeholder={key === 'customerPhone' ? '01XXXXXXXXX' : undefined}
+              />
             </FormField>
           ))}
-          <Button onClick={() => setStep('payment')}>Continue</Button>
+          <Button
+            onClick={() => {
+              const errs = validateAddress();
+              setAddressErrors(errs);
+              if (errs.length === 0) setStep('payment');
+            }}
+          >
+            Continue
+          </Button>
         </Card>
       )}
 
@@ -234,8 +288,17 @@ export function CheckoutPage() {
             onValueChange={(v) => set('paymentMethod', v)}
           >
             <TabsList>
-              <TabsTrigger value="MANUAL_BKASH">bKash</TabsTrigger>
-              <TabsTrigger value="CASH_ON_DELIVERY">COD</TabsTrigger>
+              <TabsTrigger value="CASH_ON_DELIVERY">Cash on delivery</TabsTrigger>
+              <TabsTrigger
+                value="MANUAL_BKASH"
+                className={
+                  form.paymentMethod === 'MANUAL_BKASH'
+                    ? 'bg-[#E2136E] text-white shadow-none hover:brightness-110'
+                    : 'text-[#E2136E] hover:bg-[#E2136E]/10'
+                }
+              >
+                bKash
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="MANUAL_BKASH" className="space-y-3 pt-4">
               <Alert tone="info" title="Manual bKash instructions">

@@ -76,6 +76,11 @@ function PricingCard({ pkg, index }: { pkg: PublicPackage; index: number }) {
         >
           Start Free Trial
         </Link>
+        <p
+          className={`mt-2 text-center text-xs ${pkg.featured ? 'text-slate-400' : 'text-ink-tertiary'}`}
+        >
+          No credit card required
+        </p>
       </motion.article>
     </ScrollReveal>
   );

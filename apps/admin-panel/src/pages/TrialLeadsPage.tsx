@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
   Button,
@@ -51,6 +51,10 @@ export function TrialLeadsPage() {
     queryKey: ['admin', 'trial-leads', search, status],
     queryFn: () =>
       adminApi.listTrialLeads({ search: search || undefined, status: status || undefined, limit: 100 }),
+    // Keeps previous results (and the search input) mounted while a new
+    // search fetches — otherwise every keystroke flips isLoading true and
+    // the early-return skeleton below unmounts the input mid-type.
+    placeholderData: keepPreviousData,
   });
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['admin', 'trial-leads'] });

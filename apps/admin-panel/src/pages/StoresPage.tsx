@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Badge,
@@ -61,6 +61,10 @@ export function StoresPage() {
   const q = useQuery({
     queryKey: ['admin', 'stores', search, status, page],
     queryFn: () => adminApi.listStores({ search, status: status || undefined, page, limit: 10 }),
+    // Keeps previous results (and the search input) mounted while a new
+    // search fetches — otherwise every keystroke flips isLoading true and
+    // the early-return skeleton below unmounts the input mid-type.
+    placeholderData: keepPreviousData,
   });
 
   const createMut = useMutation({

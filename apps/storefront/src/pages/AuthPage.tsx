@@ -1,27 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, FormField, Input } from '@commercenest/ui';
-import { ApiClientError, storefrontApi } from '../lib/api';
+import { ApiClientError, describeApiError, storefrontApi } from '../lib/api';
 import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
 import { useAuthStore } from '../stores/authStore';
 import { useLocaleStore } from '../stores/localeStore';
 
 const RESEND_COOLDOWN_SECONDS = 60;
-
-/** Zod field-level messages (e.g. the exact phone-format rule) are more
- * actionable than the generic "Validation failed" top-level message, and
- * are already customer-safe. */
-function describeAuthError(err: unknown): string {
-  if (err instanceof ApiClientError) {
-    if (err.code === 'VALIDATION_ERROR' && Array.isArray(err.details) && err.details[0]) {
-      const detail = err.details[0] as { message?: string };
-      if (detail.message) return detail.message;
-    }
-    return err.message;
-  }
-  return 'Something went wrong. Please try again.';
-}
 
 /**
  * Handles /login, /register, and /forgot — all three share this one
@@ -99,7 +85,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' | 'forgot' }) {
       setSession(res.accessToken, res.customer);
       navigate('/account');
     } catch (err) {
-      setError(describeAuthError(err));
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }
@@ -115,7 +101,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' | 'forgot' }) {
         res.devToken ? `${window.location.origin}/reset-password?token=${res.devToken}` : null,
       );
     } catch (err) {
-      setError(describeAuthError(err));
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }
@@ -130,7 +116,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' | 'forgot' }) {
       setOtpStep('otp');
       startCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
-      setError(describeAuthError(err));
+      setError(describeApiError(err));
       if (err instanceof ApiClientError && err.code === 'RATE_LIMITED') {
         startCooldown(RESEND_COOLDOWN_SECONDS);
       }
@@ -151,7 +137,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' | 'forgot' }) {
         setError('Verification succeeded but no session was returned.');
       }
     } catch (err) {
-      setError(describeAuthError(err));
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }

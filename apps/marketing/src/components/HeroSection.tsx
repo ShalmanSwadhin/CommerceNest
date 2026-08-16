@@ -1,4 +1,4 @@
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { homeContent } from '@/content/home';
@@ -118,6 +118,14 @@ export function HeroSection() {
               {hero.secondaryCta.label}
             </motion.a>
           </motion.div>
+
+          <motion.p
+            variants={reduce ? undefined : staggerItem}
+            className="mt-3 flex items-center gap-1.5 text-xs font-medium text-slate-400"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+            No credit card required
+          </motion.p>
 
           <motion.div variants={reduce ? undefined : staggerItem} className="mt-6 flex items-center gap-3 lg:mt-7">
             <div className="flex -space-x-2" aria-hidden>

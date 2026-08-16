@@ -228,6 +228,7 @@ export function TrialRequestPage() {
               </button>
               <p className="mt-3 text-center text-xs text-ink-muted">
                 We'll create a real, working storefront you can explore immediately.
+                No credit card required.
               </p>
             </form>
           </>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button, Input, Pagination } from '@commercenest/ui';
@@ -72,6 +72,11 @@ export function CategoryPage() {
         ? storefrontApi.products(slug, queryParams)
         : storefrontApi.categoryProducts(slug, categorySlug, queryParams),
     enabled: !!slug,
+    // Keeps the previous page's results (and the search input) mounted while
+    // a new search/filter fetches — without this, every keystroke changes
+    // the query key, isLoading flips true, and the early-return skeleton
+    // below unmounts the input the user is still typing into.
+    placeholderData: keepPreviousData,
   });
 
   const products = useMemo(() => unwrapList(q.data), [q.data]);
