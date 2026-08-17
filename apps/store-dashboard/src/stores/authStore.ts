@@ -22,6 +22,34 @@ interface AuthState {
   clearSession: () => void;
 }
 
+const STORE_ROLES = new Set([
+  'STORE_OWNER',
+  'STORE_MANAGER',
+  'INVENTORY_MANAGER',
+  'ORDER_MANAGER',
+  'CUSTOMER_SUPPORT',
+  'MASTER_ADMIN',
+]);
+
+/** The single source of truth for "is this session actually usable here" —
+ * ProtectedRoute and LoginPage must agree on this exact condition. When they
+ * drifted (LoginPage only checked accessToken, ProtectedRoute also required
+ * a valid role + storeId), a session with a token but no valid role bounced
+ * forever between "/" and "/login" (ProtectedRoute redirects to /login,
+ * LoginPage sees the token and redirects back to "/"), which renders as a
+ * blank page. */
+export function hasValidStoreSession(state: {
+  accessToken: string | null;
+  user: AuthUser | null;
+}): boolean {
+  return (
+    !!state.accessToken &&
+    !!state.user &&
+    STORE_ROLES.has(state.user.role) &&
+    !!state.user.storeId
+  );
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

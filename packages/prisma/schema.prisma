@@ -195,6 +195,24 @@ enum CustomThemeAvailability {
   ADDITIONAL_CHARGE
 }
 
+enum BillingPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+/**
+ * SUBSCRIPTION_CHARGE / PLATFORM_FEE = positive, owed by the merchant.
+ * ADJUSTMENT (e.g. a refund reducing an already-booked fee) / CREDIT
+ * (promotional) / PAYMENT (money received) = negative, reduce the balance.
+ */
+enum BillingEntryType {
+  SUBSCRIPTION_CHARGE
+  PLATFORM_FEE
+  ADJUSTMENT
+  CREDIT
+  PAYMENT
+}
+
 // ---------------------------------------------------------------------------
 // Staff & platform identity
 // ---------------------------------------------------------------------------
@@ -301,6 +319,8 @@ model Store {
   couponRedemptions  CouponRedemption[]
   returnRequests     ReturnRequest[]
   trialLead          TrialLead?
+  billingPeriods     BillingPeriod[]
+  billingLedgerEntries BillingLedgerEntry[]
 
   @@index([status])
   @@index([ownerUserId])
@@ -987,6 +1007,10 @@ model Package {
   maxStaff                Int?
   maxOrders               Int?
   storageLimitMb          Int?
+  /** CommerceNest's cut of eligible order value, as a fraction (0.0050 =
+   * 0.50%) — distinct from any payment-gateway processing fee. See
+   * BILLING_ARCHITECTURE.md "Eligible GMV" for exactly what this applies to. */
+  platformFeeRate         Decimal                  @db.Decimal(6, 4) @default(0)
   features                Json                     @default("[]")
   trialDays               Int                      @default(7)
   customThemeAvailability CustomThemeAvailability  @default(ADDITIONAL_CHARGE)
@@ -996,6 +1020,76 @@ model Package {
 
   @@index([active, displayOrder])
   @@map("packages")
+}
+
+// ---------------------------------------------------------------------------
+// Billing — usage/GMV-based platform fee + subscription ledger
+// ---------------------------------------------------------------------------
+
+/**
+ * One calendar-month window per store. Pricing fields are a SNAPSHOT taken
+ * from the store's Package at the moment the period was opened — never
+ * re-read from Package afterward, so a later price/fee-rate change can
+ * never rewrite a historical invoice (see BILLING_ARCHITECTURE.md
+ * "Snapshot pricing"). `eligibleGmv`/`platformFeeAmount` are running totals
+ * kept in sync by billing.service as orders are delivered/refunded within
+ * the period — not recomputed from scratch on every read.
+ */
+model BillingPeriod {
+  id                String              @id @default(cuid())
+  storeId           String
+  periodStart       DateTime
+  periodEnd         DateTime
+  status            BillingPeriodStatus @default(OPEN)
+  planSlug          String
+  planName          String
+  subscriptionPrice Decimal             @db.Decimal(12, 2)
+  platformFeeRate   Decimal             @db.Decimal(6, 4)
+  currency          String              @default("BDT")
+  eligibleGmv       Decimal             @db.Decimal(14, 2) @default(0)
+  platformFeeAmount Decimal             @db.Decimal(12, 2) @default(0)
+  createdAt         DateTime            @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  store   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  entries BillingLedgerEntry[]
+
+  @@unique([storeId, periodStart])
+  @@index([storeId, status])
+  @@map("billing_periods")
+}
+
+/**
+ * Append-only financial ledger — the single source of truth for what a
+ * store has been charged/credited. Never edited or deleted after creation;
+ * corrections are new ADJUSTMENT/CREDIT entries, not mutations of old ones
+ * (see BILLING_ARCHITECTURE.md "Billing history must be immutable").
+ *
+ * Idempotency: `[storeId, referenceType, referenceId, type]` is unique, so
+ * the same real-world event (one order's delivery, one return's refund, one
+ * billing period's subscription charge) can never produce two entries even
+ * if the code path that books it runs twice.
+ */
+model BillingLedgerEntry {
+  id              String           @id @default(cuid())
+  storeId         String
+  billingPeriodId String?
+  type            BillingEntryType
+  amount          Decimal          @db.Decimal(12, 2)
+  currency        String           @default("BDT")
+  description     String
+  referenceType   String
+  referenceId     String
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+
+  store         Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  billingPeriod BillingPeriod? @relation(fields: [billingPeriodId], references: [id], onDelete: SetNull)
+
+  @@unique([storeId, referenceType, referenceId, type])
+  @@index([storeId, createdAt])
+  @@index([billingPeriodId])
+  @@map("billing_ledger_entries")
 }
 
 // ---------------------------------------------------------------------------

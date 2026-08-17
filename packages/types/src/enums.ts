@@ -214,6 +214,23 @@ export const CustomThemeAvailability = {
 export type CustomThemeAvailability =
   (typeof CustomThemeAvailability)[keyof typeof CustomThemeAvailability];
 
+export const BillingPeriodStatus = {
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
+} as const;
+export type BillingPeriodStatus =
+  (typeof BillingPeriodStatus)[keyof typeof BillingPeriodStatus];
+
+export const BillingEntryType = {
+  SUBSCRIPTION_CHARGE: 'SUBSCRIPTION_CHARGE',
+  PLATFORM_FEE: 'PLATFORM_FEE',
+  ADJUSTMENT: 'ADJUSTMENT',
+  CREDIT: 'CREDIT',
+  PAYMENT: 'PAYMENT',
+} as const;
+export type BillingEntryType =
+  (typeof BillingEntryType)[keyof typeof BillingEntryType];
+
 /** Bangladesh mobile number: 01[3-9] followed by 8 digits (11 total). */
 export const BANGLADESH_PHONE_REGEX = /^01[3-9]\d{8}$/;
 

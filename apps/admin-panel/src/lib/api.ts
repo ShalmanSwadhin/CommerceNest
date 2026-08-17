@@ -686,6 +686,21 @@ export const adminApi = {
       method: 'DELETE',
     }),
 
+  // --- Usage & billing ---
+  getStoreUsage: (storeId: string) => apiRequest<StoreUsage>(`/api/admin/stores/${storeId}/usage`),
+  getStoreBillingHistory: (storeId: string, params: { page?: number; limit?: number } = {}) =>
+    apiRequest<{ items: BillingPeriod[]; total: number; page: number; limit: number }>(
+      `/api/admin/stores/${storeId}/billing${toQuery(params)}`,
+    ),
+  getBillingPeriodDetail: (storeId: string, periodId: string) =>
+    apiRequest<{ period: BillingPeriod; entries: BillingLedgerEntry[] }>(
+      `/api/admin/stores/${storeId}/billing/${periodId}`,
+    ),
+  listAllBilling: (params: { page?: number; limit?: number; storeId?: string } = {}) =>
+    apiRequest<{ items: BillingPeriod[]; total: number; page: number; limit: number }>(
+      `/api/admin/billing${toQuery(params)}`,
+    ),
+
   // --- Notifications ---
   listNotifications: (params: Record<string, string | number | boolean | undefined> = {}) =>
     apiRequest<{ items: AdminNotification[]; unreadCount: number; total: number }>(
@@ -748,10 +763,48 @@ export interface Package {
   maxStaff: number | null;
   maxOrders: number | null;
   storageLimitMb: number | null;
+  /** Fraction of eligible order value, e.g. 0.005 = 0.50%. */
+  platformFeeRate: number;
   features: string[];
   trialDays: number;
   customThemeAvailability: 'INCLUDED' | 'ADDITIONAL_CHARGE';
   supportLevel: string;
+}
+
+export interface StoreUsage {
+  planTier: string;
+  planName: string;
+  products: { used: number; limit: number | null };
+  staff: { used: number; limit: number | null };
+  storage: { usedBytes: number; limitBytes: number | null };
+}
+
+export interface BillingPeriod {
+  id: string;
+  storeId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'OPEN' | 'CLOSED';
+  planSlug: string;
+  planName: string;
+  subscriptionPrice: number;
+  platformFeeRate: number;
+  currency: string;
+  eligibleGmv: number;
+  platformFeeAmount: number;
+  totalDue: number;
+  store?: { id: string; name: string; slug: string };
+}
+
+export interface BillingLedgerEntry {
+  id: string;
+  type: 'SUBSCRIPTION_CHARGE' | 'PLATFORM_FEE' | 'ADJUSTMENT' | 'CREDIT' | 'PAYMENT';
+  amount: number;
+  currency: string;
+  description: string;
+  referenceType: string;
+  referenceId: string;
+  createdAt: string;
 }
 
 export interface AdminNotification {

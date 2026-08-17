@@ -9,7 +9,7 @@ import {
   StoreStatus,
 } from '@commercenest/types';
 import type { Prisma } from '@commercenest/prisma';
-import { prisma } from '../lib/prisma.js';
+import { prisma, isUniqueConstraintError } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { kvDel, kvGet, kvSet } from '../lib/redis.js';
@@ -19,16 +19,6 @@ import { env } from '../lib/env.js';
 import { validateCouponForOrder } from './coupon.service.js';
 import { createAndSendOtp, consumeOtp, otpConsumeErrorMessage } from '../lib/otp.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
-
-/** Prisma unique-constraint-violation error code (P2002). */
-function isUniqueConstraintError(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'code' in err &&
-    (err as { code?: string }).code === 'P2002'
-  );
-}
 
 /**
  * V1 MANUAL_BKASH is two-step:

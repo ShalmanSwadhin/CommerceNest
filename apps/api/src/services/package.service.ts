@@ -20,6 +20,9 @@ const packageInputSchema = z.object({
   maxStaff: z.number().int().min(0).nullable().optional(),
   maxOrders: z.number().int().min(0).nullable().optional(),
   storageLimitMb: z.number().int().min(0).nullable().optional(),
+  /** Fraction of eligible order value, e.g. 0.005 = 0.50%. Distinct from
+   * any payment-gateway processing fee. */
+  platformFeeRate: z.number().min(0).max(1).default(0),
   features: z.array(z.string().trim().min(1).max(200)).default([]),
   trialDays: z.number().int().min(0).max(90).default(7),
   customThemeAvailability: z

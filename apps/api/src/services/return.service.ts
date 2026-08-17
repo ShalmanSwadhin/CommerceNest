@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { toNumber } from './order.service.js';
+import { bookRefundAdjustment } from './billing.service.js';
 
 const createReturnSchema = z
   .object({
@@ -175,6 +176,19 @@ export async function completeRefund(storeId: string, returnId: string, input: u
       where: { id: found.orderId },
       data: { paymentStatus: PaymentStatus.REFUNDED },
     });
+
+    // Proportionally reverses whatever platform fee was booked for this
+    // order (a no-op if none was — e.g. the order was never delivered).
+    // Keyed by this ReturnRequest's own id, so a retried/duplicate refund
+    // call can never double-adjust.
+    await bookRefundAdjustment(tx, {
+      returnRequestId: found.id,
+      orderId: found.orderId,
+      storeId,
+      refundAmount: data.refundAmount,
+      orderTotal,
+    });
+
     return ret;
   });
 

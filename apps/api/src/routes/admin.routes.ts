@@ -17,6 +17,8 @@ import * as trialService from '../services/trial.service.js';
 import * as packageService from '../services/package.service.js';
 import * as themePresetService from '../services/theme-preset.service.js';
 import * as notificationService from '../services/notification.service.js';
+import * as subscriptionService from '../services/subscription.service.js';
+import * as billingService from '../services/billing.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -506,6 +508,42 @@ adminRouter.delete(
   '/packages/:id',
   asyncHandler(async (req, res) => {
     res.json(await packageService.deletePackage(param(req, 'id'), actorFrom(req)));
+  }),
+);
+
+// --- Usage & billing ---
+adminRouter.get(
+  '/stores/:id/usage',
+  asyncHandler(async (req, res) => {
+    res.json(await subscriptionService.getStoreUsage(param(req, 'id')));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/billing',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await billingService.listBillingPeriods(param(req, 'id'), { page, limit }));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/billing/:periodId',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await billingService.getBillingPeriodDetail(param(req, 'id'), param(req, 'periodId')),
+    );
+  }),
+);
+
+adminRouter.get(
+  '/billing',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const storeId = typeof req.query.storeId === 'string' ? req.query.storeId : undefined;
+    res.json(await billingService.listAllStoreBilling({ page, limit, storeId }));
   }),
 );
 

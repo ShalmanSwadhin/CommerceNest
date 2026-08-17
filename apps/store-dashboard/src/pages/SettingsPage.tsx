@@ -15,6 +15,7 @@ import { ErrorState, PageSkeleton } from '../components/QueryState';
 import { useStoreId } from '../stores/authStore';
 import { MerchantVerificationCard } from '../components/MerchantVerificationCard';
 import { DomainRequestCard } from '../components/DomainRequestCard';
+import { PlanUsageCard } from '../components/PlanUsageCard';
 
 const STAFF_ROLES = [
   'STORE_MANAGER',
@@ -178,6 +179,8 @@ export function SettingsPage() {
           Save settings
         </Button>
       </Card>
+
+      <PlanUsageCard />
 
       <MerchantVerificationCard />
 

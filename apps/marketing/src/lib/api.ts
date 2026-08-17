@@ -42,6 +42,9 @@ export interface PublicPackage {
   maxProducts: number | null;
   maxStaff: number | null;
   storageLimitMb: number | null;
+  /** Fraction of eligible order value, e.g. 0.005 = 0.50%. Separate from any
+   * payment gateway processing fee. */
+  platformFeeRate: number;
   features: string[];
   trialDays: number;
   customThemeAvailability: 'INCLUDED' | 'ADDITIONAL_CHARGE';

@@ -25,6 +25,8 @@ import * as announcementService from '../services/announcement.service.js';
 import * as couponService from '../services/coupon.service.js';
 import * as returnService from '../services/return.service.js';
 import * as onboardingService from '../services/onboarding.service.js';
+import * as subscriptionService from '../services/subscription.service.js';
+import * as billingService from '../services/billing.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -601,6 +603,32 @@ storeRouter.delete(
     res.json(
       await mediaService.deleteMedia(scopedStoreId(req), param(req, 'mediaId')),
     );
+  }),
+);
+
+// Plan & usage
+storeRouter.get(
+  '/usage',
+  asyncHandler(async (req, res) => {
+    res.json(await subscriptionService.getStoreUsage(scopedStoreId(req)));
+  }),
+);
+
+storeRouter.get(
+  '/billing',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.json(await billingService.getStoreBillingSummary(scopedStoreId(req)));
+  }),
+);
+
+storeRouter.get(
+  '/billing/periods',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await billingService.listBillingPeriods(scopedStoreId(req), { page, limit }));
   }),
 );
 

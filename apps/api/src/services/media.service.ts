@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { env, hasCloudinary } from '../lib/env.js';
+import { assertWithinStorageLimit } from './subscription.service.js';
 
 /**
  * This system is for images only — anything else (HTML, scripts, archives)
@@ -158,6 +159,9 @@ const registerMediaSchema = z
 
 export async function registerMediaAsset(storeId: string, rawInput: unknown) {
   const input = registerMediaSchema.parse(rawInput);
+
+  await assertWithinStorageLimit(storeId, input.bytes);
+
   return prisma.mediaAsset.create({
     data: {
       storeId,

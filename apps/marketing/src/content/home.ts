@@ -375,7 +375,7 @@ export const homeContent = {
     id: 'pricing',
     title: 'Simple plans for growing merchants',
     supporting:
-      'Starter, Business, and Pro plans in BDT — see exactly what is included in each before you start your trial.',
+      'Low monthly pricing with a small platform fee that scales with your business. Payment gateway charges (bKash, etc.) are separate.',
     cta: { label: 'See full pricing', href: '/pricing' },
   },
 

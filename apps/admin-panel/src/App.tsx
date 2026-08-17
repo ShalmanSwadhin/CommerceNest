@@ -14,7 +14,7 @@ import { ThemeEditorProPage } from './pages/ThemeEditorProPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
-import { LicensesPage } from './pages/LicensesPage';
+import { BillingPage } from './pages/BillingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { SupportPage } from './pages/SupportPage';
@@ -65,7 +65,7 @@ export default function App() {
                   <Route path="pricing" element={<PricingPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
-                  <Route path="licenses" element={<LicensesPage />} />
+                  <Route path="billing" element={<BillingPage />} />
                   <Route path="audit-logs" element={<AuditLogsPage />} />
                   <Route path="announcements" element={<AnnouncementsPage />} />
                   <Route path="support" element={<SupportPage />} />

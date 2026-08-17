@@ -49,6 +49,10 @@ export function PricingPage() {
             Simple, transparent pricing in Bangladeshi Taka. Start free, upgrade any
             time.
           </p>
+          <p className="mt-2 text-sm text-white/50">
+            Each plan includes a small platform fee on eligible sales, shown below — separate from
+            any payment gateway (bKash, etc.) charges.
+          </p>
         </div>
 
         {error ? (
@@ -96,6 +100,11 @@ export function PricingPage() {
                   <span className={pkg.featured ? 'text-sm text-ink-secondary' : 'text-sm text-white/60'}>
                     /month
                   </span>
+                </div>
+                <div className={`mt-3 space-y-1 text-sm ${pkg.featured ? 'text-ink-secondary' : 'text-white/60'}`}>
+                  <p>Up to {pkg.maxProducts ?? 'unlimited'} active products</p>
+                  <p>{pkg.maxStaff ?? 'Unlimited'} staff accounts</p>
+                  <p className="font-medium">+ {(pkg.platformFeeRate * 100).toFixed(2)}% platform fee</p>
                 </div>
                 <ul className="mt-6 flex-1 space-y-2.5">
                   {pkg.features.map((feature) => (

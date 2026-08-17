@@ -70,7 +70,11 @@ async function upsertStoreBundle(opts: {
         ownerUserId: owner.id,
         category: opts.category,
         tagline: opts.tagline,
-        planTier: 'growth',
+        // Matches a real seeded Package slug (see packageSeeds below) so demo
+        // stores exercise the actual plan limits/platform fee instead of the
+        // subscription.service fallback. 'growth' was a pre-Package-system
+        // placeholder that never matched anything.
+        planTier: 'business',
         bkashNumber: opts.bkashNumber,
         bkashInstructions:
           'Send payment to the store bKash number and submit Txn ID at checkout.',
@@ -574,9 +578,10 @@ async function main() {
       monthlyPrice: 499,
       displayOrder: 1,
       maxProducts: 50,
-      maxStaff: 3,
+      maxStaff: 2,
       maxOrders: null as number | null,
       storageLimitMb: 500,
+      platformFeeRate: 0.005,
       trialDays: 7,
       customThemeAvailability: CustomThemeAvailability.ADDITIONAL_CHARGE,
       supportLevel: 'basic',
@@ -598,10 +603,11 @@ async function main() {
       description: 'For growing businesses that need more room and more tools.',
       monthlyPrice: 999,
       displayOrder: 2,
-      maxProducts: 500,
-      maxStaff: 10,
+      maxProducts: 250,
+      maxStaff: 5,
       maxOrders: null as number | null,
       storageLimitMb: 2000,
+      platformFeeRate: 0.004,
       trialDays: 7,
       customThemeAvailability: CustomThemeAvailability.ADDITIONAL_CHARGE,
       supportLevel: 'priority',
@@ -622,17 +628,18 @@ async function main() {
       description: 'For established businesses that want the full CommerceNest experience.',
       monthlyPrice: 1999,
       displayOrder: 3,
-      maxProducts: null as number | null,
-      maxStaff: null as number | null,
+      maxProducts: 1000,
+      maxStaff: 15,
       maxOrders: null as number | null,
       storageLimitMb: 10000,
+      platformFeeRate: 0.0025,
       trialDays: 7,
       customThemeAvailability: CustomThemeAvailability.INCLUDED,
       supportLevel: 'priority',
       featured: false,
       features: [
         'Everything in Business',
-        'Unlimited products & staff',
+        'Up to 1,000 active products, 15 staff accounts',
         'Advanced storefront customization service',
         'Custom theme service included',
         'Priority support',
@@ -642,10 +649,16 @@ async function main() {
   ];
 
   for (const pkg of packageSeeds) {
+    // update (not `{}`) so re-running the seed keeps the dev/test catalog in
+    // sync with these defaults. This never touches a real production
+    // Package row's price/fee once merchants exist — Master Admin manages
+    // those from /admin/packages, and any already-open BillingPeriod for a
+    // store keeps its own snapshotted rate regardless (see
+    // BILLING_ARCHITECTURE.md "Snapshot pricing").
     await prisma.package.upsert({
       where: { slug: pkg.slug },
       create: { ...pkg, currency: 'BDT', active: true },
-      update: {},
+      update: { ...pkg, currency: 'BDT' },
     });
   }
 

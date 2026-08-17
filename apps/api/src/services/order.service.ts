@@ -14,6 +14,7 @@ import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { CUSTOMER_SAFE_SELECT } from './customer.service.js';
 import { recalculateRisk } from './customer-risk.service.js';
+import { bookPlatformFeeForOrder } from './billing.service.js';
 
 /** Order status state machine */
 export const ORDER_TRANSITIONS: Record<OrderStatusType, OrderStatusType[]> = {
@@ -202,6 +203,20 @@ export async function transitionOrderStatus(
       },
       include: { items: true, customer: { select: CUSTOMER_SAFE_SELECT } },
     });
+
+    // DELIVERED is the one point in the order lifecycle where money is
+    // realized for every payment method (isPaid flips true right above) —
+    // so it's the single, deliberate trigger for the platform fee. See
+    // billing.service.ts and BILLING_ARCHITECTURE.md "What orders generate
+    // the platform fee".
+    if (toStatus === OrderStatus.DELIVERED) {
+      await bookPlatformFeeForOrder(tx, {
+        id: updated.id,
+        storeId,
+        subtotal: updated.subtotal,
+        discountAmount: updated.discountAmount,
+      });
+    }
 
     await tx.orderStatusHistory.create({
       data: {

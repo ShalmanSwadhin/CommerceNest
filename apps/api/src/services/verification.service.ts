@@ -4,7 +4,7 @@ import {
   BANGLADESH_PHONE_REGEX,
   EmailVerificationSubject,
 } from '@commercenest/types';
-import { prisma } from '../lib/prisma.js';
+import { prisma, isUniqueConstraintError } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { hashLookupToken } from '../lib/password.js';
 import { sendEmail } from '../lib/email.js';
@@ -215,12 +215,7 @@ export async function confirmPhoneVerificationOtp(
   } catch (err) {
     // Customer.phone is unique per store — someone else may have claimed
     // this number between sending the code and confirming it.
-    if (
-      err &&
-      typeof err === 'object' &&
-      'code' in err &&
-      (err as { code?: string }).code === 'P2002'
-    ) {
+    if (isUniqueConstraintError(err)) {
       throw AppError.conflict(
         'This phone number is already associated with another account.',
       );

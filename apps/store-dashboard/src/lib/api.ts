@@ -373,6 +373,37 @@ export interface DomainRequestRow {
   createdAt: string;
 }
 
+export interface StoreUsage {
+  planTier: string;
+  planName: string;
+  products: { used: number; limit: number | null };
+  staff: { used: number; limit: number | null };
+  storage: { usedBytes: number; limitBytes: number | null };
+}
+
+export interface BillingPeriod {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'OPEN' | 'CLOSED';
+  planName: string;
+  subscriptionPrice: number;
+  platformFeeRate: number;
+  currency: string;
+  eligibleGmv: number;
+  platformFeeAmount: number;
+  totalDue: number;
+}
+
+export interface BillingLedgerEntry {
+  id: string;
+  type: 'SUBSCRIPTION_CHARGE' | 'PLATFORM_FEE' | 'ADJUSTMENT' | 'CREDIT' | 'PAYMENT';
+  amount: number;
+  currency: string;
+  description: string;
+  createdAt: string;
+}
+
 function storePath(storeId: string, suffix: string) {
   return `/api/store/${storeId}${suffix}`;
 }
@@ -689,6 +720,13 @@ export const storeApi = {
       method: 'POST',
       body: JSON.stringify({ label, note }),
     }),
+  getUsage: (storeId: string) => apiRequest<StoreUsage>(storePath(storeId, '/usage')),
+  getBilling: (storeId: string) =>
+    apiRequest<{ period: BillingPeriod; entries: BillingLedgerEntry[] }>(storePath(storeId, '/billing')),
+  getBillingPeriods: (storeId: string, params: { page?: number; limit?: number } = {}) =>
+    apiRequest<{ items: BillingPeriod[]; total: number; page: number; limit: number }>(
+      storePath(storeId, `/billing/periods${toQuery(params)}`),
+    ),
   listStaff: (storeId: string) =>
     apiRequest<StaffRow[] | { data?: StaffRow[]; items?: StaffRow[] }>(
       storePath(storeId, '/staff'),

@@ -7,6 +7,133 @@ import { adminApi } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { ErrorState, PageSkeleton } from '../components/QueryState';
 
+function formatBdt(amount: number) {
+  return `৳${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function UsageBar({ used, limit }: { used: number; limit: number | null }) {
+  const pct = limit ? Math.min(100, (used / limit) * 100) : 0;
+  return (
+    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
+      <div
+        className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-primary'}`}
+        style={{ width: `${limit ? pct : 100}%` }}
+      />
+    </div>
+  );
+}
+
+function StoreUsageCard({ storeId }: { storeId: string }) {
+  const q = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'usage'],
+    queryFn: () => adminApi.getStoreUsage(storeId),
+  });
+  if (q.isLoading || !q.data) return null;
+  const usage = q.data;
+  return (
+    <Card elevated padding="lg" className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink">Usage — {usage.planName} plan</h3>
+      </div>
+      <div className="grid gap-5 sm:grid-cols-3">
+        <div>
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-ink-secondary">Products</span>
+            <span className="font-medium text-ink">
+              {usage.products.used} / {usage.products.limit ?? '∞'}
+            </span>
+          </div>
+          <UsageBar used={usage.products.used} limit={usage.products.limit} />
+        </div>
+        <div>
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-ink-secondary">Staff</span>
+            <span className="font-medium text-ink">
+              {usage.staff.used} / {usage.staff.limit ?? '∞'}
+            </span>
+          </div>
+          <UsageBar used={usage.staff.used} limit={usage.staff.limit} />
+        </div>
+        <div>
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-ink-secondary">Storage</span>
+            <span className="font-medium text-ink">
+              {formatBytes(usage.storage.usedBytes)} / {usage.storage.limitBytes ? formatBytes(usage.storage.limitBytes) : '∞'}
+            </span>
+          </div>
+          <UsageBar used={usage.storage.usedBytes} limit={usage.storage.limitBytes} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function StoreBillingCard({ storeId }: { storeId: string }) {
+  const q = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'billing'],
+    queryFn: () => adminApi.getStoreBillingHistory(storeId, { limit: 6 }),
+  });
+  if (q.isLoading || !q.data) return null;
+  const periods = q.data.items;
+  const current = periods[0];
+  return (
+    <Card elevated padding="lg" className="space-y-4">
+      <h3 className="text-sm font-semibold text-ink">Billing</h3>
+      {current ? (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Current period" value={`${formatDate(current.periodStart)} – ${formatDate(current.periodEnd)}`} />
+          <Field label="Subscription" value={formatBdt(current.subscriptionPrice)} />
+          <Field
+            label="Eligible GMV"
+            value={`${formatBdt(current.eligibleGmv)} (fee ${(current.platformFeeRate * 100).toFixed(2)}%)`}
+          />
+          <Field label="Platform fee" value={formatBdt(current.platformFeeAmount)} />
+          <Field label="Total this period" value={<strong>{formatBdt(current.totalDue)}</strong>} />
+          <Field label="Status" value={<Badge tone={current.status === 'OPEN' ? 'caution' : 'neutral'}>{current.status}</Badge>} />
+        </div>
+      ) : (
+        <p className="text-sm text-ink-secondary">No billing history yet.</p>
+      )}
+      {periods.length > 1 ? (
+        <div className="border-t border-line pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase text-ink-tertiary">Previous periods</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-xs text-ink-tertiary">
+                  <th className="pb-2 pr-4 font-medium">Period</th>
+                  <th className="pb-2 pr-4 font-medium">Plan</th>
+                  <th className="pb-2 pr-4 font-medium text-right">Subscription</th>
+                  <th className="pb-2 pr-4 font-medium text-right">GMV</th>
+                  <th className="pb-2 pr-4 font-medium text-right">Platform fee</th>
+                  <th className="pb-2 font-medium text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {periods.slice(1).map((p) => (
+                  <tr key={p.id} className="border-t border-line">
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatDate(p.periodStart)}</td>
+                    <td className="py-2 pr-4">{p.planName}</td>
+                    <td className="py-2 pr-4 text-right">{formatBdt(p.subscriptionPrice)}</td>
+                    <td className="py-2 pr-4 text-right">{formatBdt(p.eligibleGmv)}</td>
+                    <td className="py-2 pr-4 text-right">{formatBdt(p.platformFeeAmount)}</td>
+                    <td className="py-2 text-right font-medium">{formatBdt(p.totalDue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 const statusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
   ACTIVE: 'success',
   PENDING_SETUP: 'caution',
@@ -87,6 +214,9 @@ export function StoreDetailPage() {
           </>
         )}
       </Card>
+
+      <StoreUsageCard storeId={store.id} />
+      <StoreBillingCard storeId={store.id} />
 
       <Card elevated padding="lg" className="space-y-4">
         <h3 className="text-sm font-semibold text-ink">Owner</h3>

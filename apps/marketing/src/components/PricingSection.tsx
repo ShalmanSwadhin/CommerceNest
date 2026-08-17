@@ -49,6 +49,11 @@ function PricingCard({ pkg, index }: { pkg: PublicPackage; index: number }) {
             /month
           </span>
         </div>
+        <div className={`mt-3 space-y-1 text-sm ${pkg.featured ? 'text-slate-300' : 'text-ink-secondary'}`}>
+          <p>Up to {pkg.maxProducts ?? 'unlimited'} active products</p>
+          <p>{pkg.maxStaff ?? 'Unlimited'} staff accounts</p>
+          <p className="font-medium">+ {(pkg.platformFeeRate * 100).toFixed(2)}% platform fee</p>
+        </div>
         <ul className="mt-6 flex-1 space-y-2.5">
           {pkg.features.slice(0, 6).map((feature) => (
             <li

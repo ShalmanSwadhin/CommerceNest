@@ -2,18 +2,25 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, FormField, Input } from '@commercenest/ui';
 import { adminApi, ApiClientError } from '../lib/api';
-import { useAuthStore } from '../stores/authStore';
+import { hasValidAdminSession, useAuthStore } from '../stores/authStore';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const user = useAuthStore((s) => s.user);
+  const impersonationActive = useAuthStore((s) => s.impersonation.active);
   const setSession = useAuthStore((s) => s.setSession);
   const [email, setEmail] = useState('admin@commercenest.com');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (accessToken) return <Navigate to="/" replace />;
+  // Must use the exact same validity check as ProtectedRoute — redirecting
+  // away here just because a token exists (even an invalid/stale one) is
+  // what caused the infinite redirect loop / blank page bug.
+  if (hasValidAdminSession({ accessToken, user, impersonationActive })) {
+    return <Navigate to="/" replace />;
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

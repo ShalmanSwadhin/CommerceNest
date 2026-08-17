@@ -20,3 +20,15 @@ if (process.env.NODE_ENV !== 'production') {
 export async function disconnectPrisma() {
   await prisma.$disconnect();
 }
+
+/** Prisma's unique-constraint-violation error code (P2002). Shared so every
+ * call site checking for a duplicate-key race (idempotent inserts, "claim
+ * this value" flows) tests for it the same way. */
+export function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  );
+}

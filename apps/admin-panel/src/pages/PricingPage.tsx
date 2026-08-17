@@ -26,6 +26,7 @@ type PackageForm = {
   maxProducts: string;
   maxStaff: string;
   storageLimitMb: string;
+  platformFeeRate: string;
   trialDays: string;
   customThemeAvailability: 'INCLUDED' | 'ADDITIONAL_CHARGE';
   supportLevel: string;
@@ -45,6 +46,7 @@ function emptyForm(): PackageForm {
     maxProducts: '',
     maxStaff: '',
     storageLimitMb: '',
+    platformFeeRate: '0',
     trialDays: '7',
     customThemeAvailability: 'ADDITIONAL_CHARGE',
     supportLevel: 'basic',
@@ -65,6 +67,8 @@ function toForm(pkg: Package): PackageForm {
     maxProducts: pkg.maxProducts !== null ? String(pkg.maxProducts) : '',
     maxStaff: pkg.maxStaff !== null ? String(pkg.maxStaff) : '',
     storageLimitMb: pkg.storageLimitMb !== null ? String(pkg.storageLimitMb) : '',
+    // Stored as a fraction (0.005), edited here as a percentage (0.50).
+    platformFeeRate: String(pkg.platformFeeRate * 100),
     trialDays: String(pkg.trialDays),
     customThemeAvailability: pkg.customThemeAvailability,
     supportLevel: pkg.supportLevel,
@@ -96,6 +100,7 @@ function formToBody(form: PackageForm) {
     maxProducts: form.maxProducts ? Number(form.maxProducts) : null,
     maxStaff: form.maxStaff ? Number(form.maxStaff) : null,
     storageLimitMb: form.storageLimitMb ? Number(form.storageLimitMb) : null,
+    platformFeeRate: (Number(form.platformFeeRate) || 0) / 100,
     trialDays: Number(form.trialDays) || 0,
     customThemeAvailability: form.customThemeAvailability,
     supportLevel: form.supportLevel,
@@ -229,6 +234,8 @@ export function PricingPage() {
             <ul className="space-y-1 text-xs text-ink-secondary">
               <li>Products: {pkg.maxProducts ?? 'Unlimited'}</li>
               <li>Staff: {pkg.maxStaff ?? 'Unlimited'}</li>
+              <li>Storage: {pkg.storageLimitMb !== null ? `${pkg.storageLimitMb} MB` : 'Unlimited'}</li>
+              <li>Platform fee: {(pkg.platformFeeRate * 100).toFixed(2)}%</li>
               <li>Trial: {pkg.trialDays} days</li>
               <li>
                 Custom theme:{' '}
@@ -299,6 +306,21 @@ export function PricingPage() {
             </FormField>
             <FormField label="Storage limit (MB)" htmlFor="pkg-storage">
               <Input id="pkg-storage" type="number" min={0} value={form.storageLimitMb} onChange={(e) => setForm((f) => ({ ...f, storageLimitMb: e.target.value }))} />
+            </FormField>
+            <FormField
+              label="Platform fee (%)"
+              htmlFor="pkg-platform-fee"
+              description="CommerceNest's cut of eligible order value — separate from any payment gateway fee"
+            >
+              <Input
+                id="pkg-platform-fee"
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={form.platformFeeRate}
+                onChange={(e) => setForm((f) => ({ ...f, platformFeeRate: e.target.value }))}
+              />
             </FormField>
             <FormField label="Trial days" htmlFor="pkg-trial-days">
               <Input id="pkg-trial-days" type="number" min={0} max={90} value={form.trialDays} onChange={(e) => setForm((f) => ({ ...f, trialDays: e.target.value }))} />
