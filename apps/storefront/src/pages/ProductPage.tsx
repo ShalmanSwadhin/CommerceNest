@@ -6,6 +6,7 @@ import { Badge, Button } from '@commercenest/ui';
 import { storefrontApi } from '../lib/api';
 import { formatBdt } from '../lib/format';
 import { canonicalUrl } from '../lib/seo';
+import { cloudinaryThumb } from '../lib/media';
 import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
 import { useCartStore } from '../stores/cartStore';
@@ -98,7 +99,7 @@ export function ProductPage() {
       <div className="overflow-hidden rounded-cn-lg bg-white shadow-soft">
         {product.images?.[0]?.url ? (
           <img
-            src={product.images[0].url}
+            src={cloudinaryThumb(product.images[0].url, 960)}
             alt={product.name}
             className="aspect-square w-full object-cover"
           />

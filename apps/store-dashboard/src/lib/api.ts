@@ -237,6 +237,7 @@ export interface OrderRow {
     unitPrice?: number | string;
   }>;
   deliveryAddress?: Record<string, string>;
+  allowedStatusTransitions?: string[];
 }
 
 export interface ProductRow {

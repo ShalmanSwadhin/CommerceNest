@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import type { Prisma } from '@commercenest/prisma';
+import { Prisma } from '@commercenest/prisma';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { toNumber } from './order.service.js';
+import { toDecimal, roundMoney, type Decimal } from './billing.service.js';
 
 const couponCodeSchema = z
   .string()
@@ -152,9 +153,22 @@ export async function validateCouponForOrder(
   storeId: string,
   rawCode: string,
   customerId: string,
-  subtotal: number,
+  subtotal: Decimal,
 ) {
   const code = rawCode.trim().toUpperCase();
+
+  // Lock the coupon row for the rest of this transaction before reading it.
+  // Without this, "run inside the same transaction" alone does NOT make the
+  // usageLimit/perCustomerLimit checks below atomic — two concurrent
+  // checkouts redeeming the same coupon can both read usedCount below the
+  // limit before either commits its redemption, over-redeeming a capped
+  // coupon. The lock forces the second transaction to wait until the first
+  // commits, so it re-reads the coupon with the first redemption already
+  // counted. Mirrors subscription.service.ts's withStoreLock pattern. A
+  // nonexistent code locks nothing and falls through to the "not found"
+  // error below, unchanged.
+  await tx.$queryRaw`SELECT id FROM "coupons" WHERE "storeId" = ${storeId} AND code = ${code} FOR UPDATE`;
+
   const coupon = await tx.coupon.findUnique({
     where: { storeId_code: { storeId, code } },
   });
@@ -177,7 +191,7 @@ export async function validateCouponForOrder(
       code: 'COUPON_EXPIRED',
     });
   }
-  if (coupon.minOrderValue && subtotal < toNumber(coupon.minOrderValue)) {
+  if (coupon.minOrderValue && subtotal.lt(toDecimal(coupon.minOrderValue))) {
     throw AppError.badRequest(
       `This coupon requires a minimum order of ${toNumber(coupon.minOrderValue)}`,
       { field: 'couponCode', code: 'COUPON_MIN_ORDER' },
@@ -203,9 +217,9 @@ export async function validateCouponForOrder(
 
   const rawDiscount =
     coupon.discountType === 'PERCENTAGE'
-      ? (subtotal * toNumber(coupon.discountValue)) / 100
-      : toNumber(coupon.discountValue);
-  const discountAmount = Math.round(Math.min(rawDiscount, subtotal) * 100) / 100;
+      ? subtotal.mul(toDecimal(coupon.discountValue)).div(100)
+      : toDecimal(coupon.discountValue);
+  const discountAmount = roundMoney(Prisma.Decimal.min(rawDiscount, subtotal));
 
   return { coupon, discountAmount };
 }

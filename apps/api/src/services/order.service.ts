@@ -94,7 +94,10 @@ export async function getOrder(storeId: string, orderId: string) {
     },
   });
   if (!order) throw AppError.notFound('Order not found');
-  return order;
+  // Lets the Store Admin UI only ever offer status buttons that are
+  // actually legal from here — reusing ORDER_TRANSITIONS (the same map
+  // transitionOrderStatus enforces) rather than duplicating it client-side.
+  return { ...order, allowedStatusTransitions: ORDER_TRANSITIONS[order.status as OrderStatusType] };
 }
 
 export async function confirmCodCall(
@@ -229,28 +232,36 @@ export async function transitionOrderStatus(
       },
     });
 
-    // Stock decrement on CONFIRMED
+    // Stock decrement on CONFIRMED — this is the one point in the lifecycle
+    // where stock actually leaves the pool (checkout deliberately does not
+    // reserve it; PENDING is just customer intent). The decrement uses a
+    // conditional `updateMany` (`stock >= quantity` in the WHERE clause,
+    // `decrement` in the SET) rather than a read-then-write of an absolute
+    // value — that read-then-write pattern is exactly the class of bug this
+    // session's billing work found and fixed elsewhere (two concurrent
+    // CONFIRMED transitions on orders sharing a variant could otherwise both
+    // read the same stock, both compute the same "new" value, and both
+    // commit it — overselling). The conditional update is atomic: Postgres
+    // evaluates `stock >= quantity` against the row's current value at
+    // write time, so the loser of a race always sees `count === 0`.
     if (toStatus === OrderStatus.CONFIRMED) {
       for (const item of updated.items) {
-        const variant = await tx.variant.findFirst({
-          where: { id: item.variantId, storeId },
+        const result = await tx.variant.updateMany({
+          where: { id: item.variantId, storeId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
         });
-        if (!variant || variant.stock < item.quantity) {
+        if (result.count === 0) {
           throw AppError.conflict('Insufficient stock', {
             code: 'INSUFFICIENT_STOCK',
             variantId: item.variantId,
           });
         }
-        const newStock = variant.stock - item.quantity;
-        await tx.variant.update({
-          where: { id: variant.id },
-          data: { stock: newStock },
-        });
 
+        const variant = await tx.variant.findUnique({ where: { id: item.variantId } });
         const product = await tx.product.findUnique({
           where: { id: item.productId },
         });
-        if (product && newStock <= product.lowStockThreshold) {
+        if (product && variant && variant.stock <= product.lowStockThreshold) {
           emitAfterCommit('ProductStockLow', {
             storeId,
             actorId: actor.id,
@@ -258,11 +269,33 @@ export async function transitionOrderStatus(
               storeId,
               productId: product.id,
               variantId: variant.id,
-              currentStock: newStock,
+              currentStock: variant.stock,
               threshold: product.lowStockThreshold,
             },
           });
         }
+      }
+    }
+
+    // Stock restoration — the mirror image of the CONFIRMED decrement
+    // above, for every path where stock was reserved but the sale then
+    // fell through before delivery: CONFIRMED→CANCELLED (PENDING→CANCELLED
+    // never reserved anything, so nothing to restore there) and
+    // SHIPPED→RETURNED (refused/undelivered — stock was reserved back at
+    // CONFIRMED and never left the building). A relative `increment` is
+    // inherently race-safe with no conditional needed. Post-delivery
+    // returns are handled separately, at the point staff physically
+    // confirms the item back (see return.service.ts#markItemReceived) —
+    // not here, since DELIVERED has no outgoing transition in this map.
+    if (
+      (toStatus === OrderStatus.CANCELLED && fromStatus === OrderStatus.CONFIRMED) ||
+      (toStatus === OrderStatus.RETURNED && fromStatus === OrderStatus.SHIPPED)
+    ) {
+      for (const item of updated.items) {
+        await tx.variant.update({
+          where: { id: item.variantId },
+          data: { stock: { increment: item.quantity } },
+        });
       }
     }
 

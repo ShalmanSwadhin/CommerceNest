@@ -132,15 +132,36 @@ export async function rejectReturn(storeId: string, returnId: string, input: unk
   return updated;
 }
 
-/** Staff confirms the physical item has been received back at the store. */
+/** Staff confirms the physical item has been received back at the store —
+ * the natural point to restore stock for a post-delivery return: the unit
+ * is now physically confirmed back in hand (unlike CANCELLED/RETURNED-
+ * before-delivery in order.service.ts, which restore at the status
+ * transition itself since nothing physical needs confirming there). Guarded
+ * by the APPROVED status check above, which only ever lets this run once
+ * per return (a second call finds status already ITEM_RECEIVED and is
+ * rejected before reaching the restock) — no separate idempotency key
+ * needed. */
 export async function markItemReceived(storeId: string, returnId: string) {
   const found = await getOwnedReturn(storeId, returnId);
   if (found.status !== ReturnStatus.APPROVED) {
     throw AppError.conflict('Return must be approved before the item can be marked received');
   }
-  return prisma.returnRequest.update({
-    where: { id: found.id },
-    data: { status: ReturnStatus.ITEM_RECEIVED },
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.returnRequest.update({
+      where: { id: found.id },
+      data: { status: ReturnStatus.ITEM_RECEIVED },
+    });
+
+    const items = await tx.orderItem.findMany({ where: { orderId: found.orderId, storeId } });
+    for (const item of items) {
+      await tx.variant.update({
+        where: { id: item.variantId },
+        data: { stock: { increment: item.quantity } },
+      });
+    }
+
+    return updated;
   });
 }
 

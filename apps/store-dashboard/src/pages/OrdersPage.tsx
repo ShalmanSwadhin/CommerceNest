@@ -290,17 +290,23 @@ export function OrdersPage() {
                 <Input id="tracking" value={trackingId} onChange={(e) => setTrackingId(e.target.value)} />
               </FormField>
               <div className="flex flex-wrap gap-2">
-                {['CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((s) => (
-                  <Button
-                    key={s}
-                    size="sm"
-                    variant="secondary"
-                    loading={statusMut.isPending}
-                    onClick={() => statusMut.mutate(s)}
-                  >
-                    Mark {s}
-                  </Button>
-                ))}
+                {(order.allowedStatusTransitions ?? []).length === 0 ? (
+                  <span className="text-sm text-ink-tertiary">
+                    No further status changes are available for this order.
+                  </span>
+                ) : (
+                  (order.allowedStatusTransitions ?? []).map((s) => (
+                    <Button
+                      key={s}
+                      size="sm"
+                      variant="secondary"
+                      loading={statusMut.isPending}
+                      onClick={() => statusMut.mutate(s)}
+                    >
+                      Mark {s}
+                    </Button>
+                  ))
+                )}
               </div>
             </div>
 

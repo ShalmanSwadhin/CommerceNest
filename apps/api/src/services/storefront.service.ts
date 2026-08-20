@@ -8,7 +8,7 @@ import {
   ProductStatus,
   StoreStatus,
 } from '@commercenest/types';
-import type { Prisma } from '@commercenest/prisma';
+import { Prisma } from '@commercenest/prisma';
 import { prisma, isUniqueConstraintError } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
@@ -17,6 +17,7 @@ import { signCustomerToken } from '../lib/jwt.js';
 import { toNumber } from './order.service.js';
 import { env } from '../lib/env.js';
 import { validateCouponForOrder } from './coupon.service.js';
+import { toDecimal, roundMoney, type Decimal } from './billing.service.js';
 import { createAndSendOtp, consumeOtp, otpConsumeErrorMessage } from '../lib/otp.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 
@@ -332,13 +333,13 @@ export function computeShippingCharge(
     freeShippingThreshold: { toString(): string } | number | string | null;
   },
   division: string,
-  subtotal: number,
-): number {
+  subtotal: Decimal,
+): Decimal {
   const threshold =
-    store.freeShippingThreshold !== null ? toNumber(store.freeShippingThreshold) : null;
-  if (threshold !== null && subtotal >= threshold) return 0;
+    store.freeShippingThreshold !== null ? toDecimal(store.freeShippingThreshold) : null;
+  if (threshold !== null && subtotal.gte(threshold)) return new Prisma.Decimal(0);
   const isDhaka = division.trim().toLowerCase() === 'dhaka';
-  return toNumber(isDhaka ? store.shippingInsideDhaka : store.shippingOutsideDhaka);
+  return toDecimal(isDhaka ? store.shippingInsideDhaka : store.shippingOutsideDhaka);
 }
 
 export async function checkout(storeSlug: string, input: unknown) {
@@ -348,14 +349,19 @@ export async function checkout(storeSlug: string, input: unknown) {
   }
   const data = storefrontCheckoutSchema.parse(input);
 
+  // Exact Decimal arithmetic throughout — the same standard the billing
+  // system holds itself to (see BILLING_ARCHITECTURE.md), applied here
+  // because this is the other place a real customer-facing money total gets
+  // computed. JS `number` is only used again at the API-response boundary
+  // (toNumber, unchanged) and never as an input to further math.
   const lineDetails: Array<{
     productId: string;
     variantId: string;
     productName: string;
     variantLabel: string;
-    unitPrice: number;
+    unitPrice: Decimal;
     quantity: number;
-    lineTotal: number;
+    lineTotal: Decimal;
   }> = [];
 
   for (const item of data.items) {
@@ -386,7 +392,7 @@ export async function checkout(storeSlug: string, input: unknown) {
       });
     }
 
-    const unitPrice = toNumber(variant.priceOverride ?? product.basePrice);
+    const unitPrice = roundMoney(toDecimal(variant.priceOverride ?? product.basePrice));
     lineDetails.push({
       productId: product.id,
       variantId: variant.id,
@@ -395,131 +401,150 @@ export async function checkout(storeSlug: string, input: unknown) {
         variant.sku,
       unitPrice,
       quantity: item.quantity,
-      lineTotal: unitPrice * item.quantity,
+      lineTotal: roundMoney(unitPrice.mul(item.quantity)),
     });
   }
 
-  const subtotal = lineDetails.reduce((s, l) => s + l.lineTotal, 0);
+  const subtotal = roundMoney(
+    lineDetails.reduce((s, l) => s.plus(l.lineTotal), new Prisma.Decimal(0)),
+  );
   const deliveryCharge = computeShippingCharge(store, data.deliveryAddress.division, subtotal);
 
   const isBkash = data.paymentMethod === PaymentMethod.MANUAL_BKASH;
 
-  const order = await prisma.$transaction(async (tx) => {
-    let customer = await tx.customer.findUnique({
-      where: {
-        storeId_phone: { storeId: store.id, phone: data.customerPhone },
-      },
-    });
-
-    if (!customer) {
-      customer = await tx.customer.create({
-        data: {
-          storeId: store.id,
-          phone: data.customerPhone,
-          name: data.customerName,
-          email: data.customerEmail,
-          preferredLocale: data.preferredLocale,
-        },
-      });
-    } else {
-      customer = await tx.customer.update({
-        where: { id: customer.id },
-        data: {
-          name: data.customerName,
-          email: data.customerEmail ?? customer.email,
-          preferredLocale: data.preferredLocale,
-        },
-      });
-    }
-
-    let discountAmount = 0;
-    let appliedCoupon: { id: string } | null = null;
-    if (data.couponCode) {
-      const { coupon, discountAmount: amount } = await validateCouponForOrder(
-        tx,
-        store.id,
-        data.couponCode,
-        customer.id,
-        subtotal,
-      );
-      discountAmount = amount;
-      appliedCoupon = coupon;
-    }
-    const total = Math.max(subtotal + deliveryCharge - discountAmount, 0);
-
-    let orderNumber = nextOrderNumber();
-    for (let i = 0; i < 3; i++) {
-      const clash = await tx.order.findUnique({
+  async function runCheckoutTransaction(orderNumber: string) {
+    return prisma.$transaction(async (tx) => {
+      let customer = await tx.customer.findUnique({
         where: {
-          storeId_orderNumber: { storeId: store.id, orderNumber },
+          storeId_phone: { storeId: store.id, phone: data.customerPhone },
         },
       });
-      if (!clash) break;
-      orderNumber = nextOrderNumber();
-    }
 
-    const created = await tx.order.create({
-      data: {
-        storeId: store.id,
-        customerId: customer.id,
-        orderNumber,
-        status: 'PENDING',
-        paymentMethod: data.paymentMethod,
-        paymentStatus:
-          isBkash && data.bkashTxnId
-            ? PaymentStatus.PENDING_VERIFICATION
-            : PaymentStatus.PENDING,
-        bkashTxnId: isBkash ? data.bkashTxnId ?? null : null,
-        bkashSenderPhone: isBkash ? data.bkashSenderPhone ?? null : null,
-        bkashAmount: isBkash && data.bkashTxnId ? total : null,
-        subtotal,
-        deliveryCharge,
-        couponCode: appliedCoupon ? data.couponCode! : null,
-        discountAmount,
-        total,
-        deliveryAddress: data.deliveryAddress,
-        items: {
-          create: lineDetails.map((l) => ({
+      if (!customer) {
+        customer = await tx.customer.create({
+          data: {
             storeId: store.id,
-            productId: l.productId,
-            variantId: l.variantId,
-            productName: l.productName,
-            variantLabel: l.variantLabel,
-            unitPrice: l.unitPrice,
-            quantity: l.quantity,
-            lineTotal: l.lineTotal,
-          })),
-        },
-        statusHistory: {
-          create: {
-            storeId: store.id,
-            fromStatus: null,
-            toStatus: 'PENDING',
-            note: 'Order placed',
+            phone: data.customerPhone,
+            name: data.customerName,
+            email: data.customerEmail,
+            preferredLocale: data.preferredLocale,
           },
-        },
-      },
-      include: { items: true, customer: { select: { riskLevel: true } } },
-    });
+        });
+      } else {
+        customer = await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            name: data.customerName,
+            email: data.customerEmail ?? customer.email,
+            preferredLocale: data.preferredLocale,
+          },
+        });
+      }
 
-    if (appliedCoupon) {
-      await tx.couponRedemption.create({
+      let discountAmount = new Prisma.Decimal(0);
+      let appliedCoupon: { id: string } | null = null;
+      if (data.couponCode) {
+        const { coupon, discountAmount: amount } = await validateCouponForOrder(
+          tx,
+          store.id,
+          data.couponCode,
+          customer.id,
+          subtotal,
+        );
+        discountAmount = amount;
+        appliedCoupon = coupon;
+      }
+      const total = Prisma.Decimal.max(
+        subtotal.plus(deliveryCharge).minus(discountAmount),
+        new Prisma.Decimal(0),
+      );
+
+      const created = await tx.order.create({
         data: {
-          couponId: appliedCoupon.id,
           storeId: store.id,
           customerId: customer.id,
-          orderId: created.id,
-          amount: discountAmount,
+          orderNumber,
+          status: 'PENDING',
+          paymentMethod: data.paymentMethod,
+          paymentStatus:
+            isBkash && data.bkashTxnId
+              ? PaymentStatus.PENDING_VERIFICATION
+              : PaymentStatus.PENDING,
+          bkashTxnId: isBkash ? data.bkashTxnId ?? null : null,
+          bkashSenderPhone: isBkash ? data.bkashSenderPhone ?? null : null,
+          bkashAmount: isBkash && data.bkashTxnId ? total : null,
+          subtotal,
+          deliveryCharge,
+          couponCode: appliedCoupon ? data.couponCode! : null,
+          discountAmount,
+          total,
+          deliveryAddress: data.deliveryAddress,
+          items: {
+            create: lineDetails.map((l) => ({
+              storeId: store.id,
+              productId: l.productId,
+              variantId: l.variantId,
+              productName: l.productName,
+              variantLabel: l.variantLabel,
+              unitPrice: l.unitPrice,
+              quantity: l.quantity,
+              lineTotal: l.lineTotal,
+            })),
+          },
+          statusHistory: {
+            create: {
+              storeId: store.id,
+              fromStatus: null,
+              toStatus: 'PENDING',
+              note: 'Order placed',
+            },
+          },
         },
+        include: { items: true, customer: { select: { riskLevel: true } } },
       });
-      await tx.coupon.update({
-        where: { id: appliedCoupon.id },
-        data: { usedCount: { increment: 1 } },
-      });
-    }
 
-    return created;
-  });
+      if (appliedCoupon) {
+        await tx.couponRedemption.create({
+          data: {
+            couponId: appliedCoupon.id,
+            storeId: store.id,
+            customerId: customer.id,
+            orderId: created.id,
+            amount: discountAmount,
+          },
+        });
+        await tx.coupon.update({
+          where: { id: appliedCoupon.id },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+
+      return created;
+    });
+  }
+
+  // Retries the whole transaction (not just the insert) on an orderNumber
+  // collision — a failed statement inside a Postgres transaction poisons
+  // every later statement on that same connection until rollback (the same
+  // lesson the billing system's invoice generation already ran into), so a
+  // catch-and-retry-with-a-fresh-number can't happen *inside* the
+  // transaction that just failed. Re-running the whole thing from a fresh
+  // transaction is the correct fix, and cheap: coupon/stock re-validation on
+  // retry is a few extra reads, not wasted correctness work. A same-store,
+  // same-day collision is normally rare (4 random digits) but not
+  // negligible for a busy store, so this must be a real retry, not just a
+  // best-effort pre-check.
+  let order: Awaited<ReturnType<typeof runCheckoutTransaction>> | undefined;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      order = await runCheckoutTransaction(nextOrderNumber());
+      break;
+    } catch (err) {
+      if (isUniqueConstraintError(err) && attempt < 3) continue;
+      throw err;
+    }
+  }
+  if (!order) throw AppError.conflict('Could not place order — please try again.');
 
   emitAfterCommit('OrderPlaced', {
     storeId: store.id,

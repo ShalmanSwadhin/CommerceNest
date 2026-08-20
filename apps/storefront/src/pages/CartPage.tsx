@@ -9,6 +9,7 @@ import { t } from '../i18n/dictionary';
 import { cartTotal, useCartStore } from '../stores/cartStore';
 import { useLocaleStore } from '../stores/localeStore';
 import { SoftEmpty } from '../components/QueryState';
+import { cloudinaryThumb } from '../lib/media';
 
 export function CartPage() {
   const locale = useLocaleStore((s) => s.locale);
@@ -48,7 +49,12 @@ export function CartPage() {
         <Card key={item.variantId} elevated className="flex gap-4">
           <div className="size-20 shrink-0 overflow-hidden rounded-cn bg-surface-sunken">
             {item.imageUrl ? (
-              <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+              <img
+                src={cloudinaryThumb(item.imageUrl, 160)}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
             ) : null}
           </div>
           <div className="min-w-0 flex-1">

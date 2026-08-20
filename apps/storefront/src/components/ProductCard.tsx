@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { StorefrontProduct } from '../lib/api';
 import { formatBdt } from '../lib/format';
+import { cloudinaryThumb } from '../lib/media';
 
 export function ProductCard({ product }: { product: StorefrontProduct }) {
   const image = product.images?.[0]?.url;
@@ -13,8 +14,9 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
       <div className="aspect-square overflow-hidden bg-surface-sunken">
         {image ? (
           <img
-            src={image}
+            src={cloudinaryThumb(image, 480)}
             alt={product.name}
+            loading="lazy"
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (

@@ -22,6 +22,7 @@ import { useLocaleStore } from '../stores/localeStore';
 import { ProductCard } from '../components/ProductCard';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
 import { CtaLink } from '../lib/ctaLink';
+import { cloudinaryThumb } from '../lib/media';
 
 /**
  * Renders a section's primary CTA per the store's Design System button-style
@@ -181,7 +182,7 @@ function renderSection(
                   style={cardTokenStyle}
                 >
                   <img
-                    src={c.imageUrl}
+                    src={cloudinaryThumb(c.imageUrl, 360)}
                     alt=""
                     loading="lazy"
                     className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
@@ -348,7 +349,7 @@ function renderSection(
     );
     const photo = (
       <div className="aspect-[4/5] w-full overflow-hidden" style={cardTokenStyle}>
-        <img src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+        <img src={cloudinaryThumb(imageUrl, 720)} alt="" loading="lazy" className="h-full w-full object-cover" />
       </div>
     );
     return (
@@ -433,7 +434,7 @@ function renderSection(
                   <figcaption className="mt-4 flex items-center gap-3">
                     {row.avatarUrl ? (
                       <img
-                        src={row.avatarUrl}
+                        src={cloudinaryThumb(row.avatarUrl, 72)}
                         alt=""
                         loading="lazy"
                         className="h-9 w-9 shrink-0 rounded-full object-cover"

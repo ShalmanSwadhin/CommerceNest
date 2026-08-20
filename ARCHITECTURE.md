@@ -85,6 +85,8 @@ Middleware `requireStoreScope` enforces:
 
 Storefront reads published theme JSON from the API and applies `themeSettings` (colors, fonts) via CSS variables.
 
+**Stock is reserved at CONFIRMED, not at checkout.** Placing an order (PENDING) never touches `Variant.stock` — checkout only checks stock is currently sufficient, as a courtesy rejection. The actual reservation happens when staff transitions an order to CONFIRMED (`order.service.ts#transitionOrderStatus`), via an atomic conditional `updateMany` (`stock >= quantity` in the WHERE clause, `decrement` in the SET) rather than a read-then-write — this is what makes two staff confirming two orders for the same last unit resolve to exactly one success instead of both succeeding. Stock is restored symmetrically whenever a reservation is undone before the customer actually received the item: CONFIRMED→CANCELLED, SHIPPED→RETURNED (refused/undelivered), and a post-delivery return's `markItemReceived` step (the point the item is physically confirmed back, not automatically on refund). This deliberately mirrors how a phone-confirmed COD business actually works: PENDING is customer intent, CONFIRMED is the real sale.
+
 ## API service layer
 
 Business logic lives in `apps/api/src/services/`:
