@@ -1,6 +1,9 @@
+import type { Prisma } from '@commercenest/prisma';
 import { ProductStatus } from '@commercenest/types';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
+
+type Db = Prisma.TransactionClient | typeof prisma;
 
 /**
  * Fallback limits used only when a store's planTier doesn't match any
@@ -29,9 +32,11 @@ export interface PlanLimits {
 }
 
 /** Centralized plan-limit lookup — every enforcement check and every usage
- * display must go through this, not a re-hardcoded copy of these numbers. */
-export async function limitsFor(planTier: string): Promise<PlanLimits> {
-  const pkg = await prisma.package.findUnique({ where: { slug: planTier } });
+ * display must go through this, not a re-hardcoded copy of these numbers.
+ * Accepts an optional transaction client so callers holding a store-row
+ * lock (see `withStoreLock`) can read through the same transaction. */
+export async function limitsFor(planTier: string, db: Db = prisma): Promise<PlanLimits> {
+  const pkg = await db.package.findUnique({ where: { slug: planTier } });
   if (pkg) {
     return {
       planTier,
@@ -46,13 +51,13 @@ export async function limitsFor(planTier: string): Promise<PlanLimits> {
   return { planTier, planName: planTier, ...fallback };
 }
 
-async function storeAndLimits(storeId: string) {
-  const store = await prisma.store.findUnique({
+async function storeAndLimits(storeId: string, db: Db = prisma) {
+  const store = await db.store.findUnique({
     where: { id: storeId },
     select: { planTier: true },
   });
   if (!store) throw AppError.notFound('Store not found');
-  return { store, limits: await limitsFor(store.planTier) };
+  return { store, limits: await limitsFor(store.planTier, db) };
 }
 
 /** The single definition of "active product" for commercial/limit purposes:
@@ -60,65 +65,102 @@ async function storeAndLimits(storeId: string) {
  * merchant iterating on unpublished drafts should never be blocked from
  * publishing because of them. Matches analytics.service's existing
  * `status: 'ACTIVE'` product-count convention. */
-export async function getActiveProductCount(storeId: string): Promise<number> {
-  return prisma.product.count({ where: { storeId, status: ProductStatus.ACTIVE } });
+export async function getActiveProductCount(storeId: string, db: Db = prisma): Promise<number> {
+  return db.product.count({ where: { storeId, status: ProductStatus.ACTIVE } });
 }
 
 /** Staff count includes the store owner — this preserves existing behavior
  * (the owner has always had `storeId` set and been included in this count);
  * changing that would be a silent, unrequested behavior change. */
-export async function getStaffCount(storeId: string): Promise<number> {
-  return prisma.user.count({ where: { storeId } });
+export async function getStaffCount(storeId: string, db: Db = prisma): Promise<number> {
+  return db.user.count({ where: { storeId } });
 }
 
-export async function getStorageUsedBytes(storeId: string): Promise<number> {
-  const agg = await prisma.mediaAsset.aggregate({
+export async function getStorageUsedBytes(storeId: string, db: Db = prisma): Promise<number> {
+  const agg = await db.mediaAsset.aggregate({
     where: { storeId },
     _sum: { bytes: true },
   });
   return agg._sum.bytes ?? 0;
 }
 
-export async function assertWithinProductLimit(storeId: string) {
-  const { store, limits } = await storeAndLimits(storeId);
+// ---------------------------------------------------------------------------
+// Concurrency-safe enforcement.
+//
+// A plain "COUNT then INSERT" is a check-then-act race: two concurrent
+// requests can both read count=49 against a limit of 50, both pass, and both
+// insert — landing at 51. Postgres serializable transactions would work but
+// need a retry loop on serialization failure; the simpler, equally-correct
+// fix here is `SELECT ... FOR UPDATE` on the store's own row before
+// checking. Row locks are held for the transaction's lifetime, so a second
+// concurrent transaction trying to lock the same store row simply waits
+// until the first commits (or rolls back) — at which point it re-reads the
+// now-current count. This serializes limit-sensitive writes per store
+// (never across stores, since each locks a different row), which is exactly
+// the granularity needed.
+// ---------------------------------------------------------------------------
+
+/** Runs `fn` inside a transaction that holds an exclusive row lock on the
+ * given store for the transaction's duration. Any limit check + write that
+ * must be race-free (product activation, staff invite) goes through this. */
+export async function withStoreLock<T>(
+  storeId: string,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "stores" WHERE id = ${storeId} FOR UPDATE`;
+    return fn(tx);
+  });
+}
+
+/** Must be called with a `tx` obtained from `withStoreLock` for the same
+ * `storeId` — the lock is what makes the count-then-compare safe. */
+export async function assertWithinProductLimitTx(tx: Prisma.TransactionClient, storeId: string) {
+  const { limits } = await storeAndLimits(storeId, tx);
   if (limits.maxProducts === null) return;
 
-  const count = await getActiveProductCount(storeId);
+  const count = await getActiveProductCount(storeId, tx);
   if (count >= limits.maxProducts) {
     throw AppError.forbidden(
       `You're using ${count}/${limits.maxProducts} active products on the ${limits.planName} plan. Upgrade your plan to add more.`,
       'PRODUCT_LIMIT_REACHED',
     );
   }
-  void store;
 }
 
-export async function assertWithinStaffLimit(storeId: string) {
-  const { store, limits } = await storeAndLimits(storeId);
+/** Must be called with a `tx` obtained from `withStoreLock` for the same
+ * `storeId` — the lock is what makes the count-then-compare safe. */
+export async function assertWithinStaffLimitTx(tx: Prisma.TransactionClient, storeId: string) {
+  const { limits } = await storeAndLimits(storeId, tx);
   if (limits.maxStaff === null) return;
 
-  const count = await getStaffCount(storeId);
+  const count = await getStaffCount(storeId, tx);
   if (count >= limits.maxStaff) {
     throw AppError.forbidden(
       `You're using ${count}/${limits.maxStaff} staff accounts on the ${limits.planName} plan. Upgrade your plan to invite more.`,
       'STAFF_LIMIT_REACHED',
     );
   }
-  void store;
 }
 
-/** Called before a new media asset is persisted — rejects the upload if it
- * would push the store over its plan's storage allowance. Storage usage is
- * always derived from the trusted `MediaAsset.bytes` column (set once, at
- * upload-registration time, from the real uploaded file size — never a
- * client-supplied "current usage" number), summed live via SQL aggregate;
- * deleting a MediaAsset row frees the allowance immediately since the sum
- * is never cached. */
-export async function assertWithinStorageLimit(storeId: string, incomingBytes: number) {
-  const { store, limits } = await storeAndLimits(storeId);
+/** Must be called with a `tx` obtained from `withStoreLock` for the same
+ * `storeId` — the lock is what makes the count-then-compare safe. Storage
+ * usage is derived from `MediaAsset.bytes`, summed live via SQL aggregate;
+ * deleting a MediaAsset row frees the allowance immediately since the sum is
+ * never cached. Callers must resolve `incomingBytes` from a trusted source
+ * (e.g. a verified Cloudinary lookup) *before* acquiring the lock — this
+ * function only does the check-and-compare, never a network call, so the
+ * lock is held for a short DB-only transaction, not across an external
+ * request (see media.service.ts#registerMediaAsset). */
+export async function assertWithinStorageLimitTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  incomingBytes: number,
+) {
+  const { limits } = await storeAndLimits(storeId, tx);
   if (limits.storageLimitMb === null) return;
 
-  const usedBytes = await getStorageUsedBytes(storeId);
+  const usedBytes = await getStorageUsedBytes(storeId, tx);
   const limitBytes = limits.storageLimitMb * 1024 * 1024;
   if (usedBytes + incomingBytes > limitBytes) {
     throw AppError.forbidden(
@@ -126,7 +168,6 @@ export async function assertWithinStorageLimit(storeId: string, incomingBytes: n
       'STORAGE_LIMIT_REACHED',
     );
   }
-  void store;
 }
 
 export async function getPlanLimits(planTier: string) {
@@ -145,8 +186,7 @@ export interface StoreUsage {
  * — the shared basis for both the Store Admin "Plan & Usage" page and the
  * Master Admin per-store usage view, so the two can never disagree. */
 export async function getStoreUsage(storeId: string): Promise<StoreUsage> {
-  const { store, limits } = await storeAndLimits(storeId);
-  void store;
+  const { limits } = await storeAndLimits(storeId);
   const [products, staff, storageBytes] = await Promise.all([
     getActiveProductCount(storeId),
     getStaffCount(storeId),

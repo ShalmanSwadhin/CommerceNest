@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Badge, Card } from '@commercenest/ui';
 import { storeApi } from '../lib/api';
 import { useStoreId } from '../stores/authStore';
@@ -118,6 +119,9 @@ export function PlanUsageCard() {
             The platform fee is separate from any payment gateway charges, and this estimate can
             still change from refunds or cancellations before the period closes.
           </p>
+          <Link to="/billing" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
+            View invoices &amp; payments →
+          </Link>
         </div>
       ) : null}
     </Card>

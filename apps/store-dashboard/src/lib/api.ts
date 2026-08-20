@@ -404,6 +404,47 @@ export interface BillingLedgerEntry {
   createdAt: string;
 }
 
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'VOID';
+export type MerchantPaymentMethod = 'MANUAL_BKASH' | 'MANUAL_BANK_TRANSFER';
+export type MerchantPaymentStatus = 'PENDING_VERIFICATION' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface Invoice {
+  id: string;
+  storeId: string;
+  billingPeriodId: string;
+  invoiceNumber: string;
+  issueDate: string;
+  dueDate: string;
+  currency: string;
+  subscriptionAmount: number;
+  platformFeeAmount: number;
+  adjustmentAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  creditApplied: number;
+  amountDue: number;
+  status: InvoiceStatus;
+  platformFeeRate: number | null;
+  eligibleGmv: number | null;
+}
+
+export interface MerchantPayment {
+  id: string;
+  storeId: string;
+  invoiceId: string;
+  method: MerchantPaymentMethod;
+  amount: number;
+  currency: string;
+  referenceId: string;
+  transferDate: string;
+  note: string | null;
+  status: MerchantPaymentStatus;
+  submittedAt: string;
+  verifiedAt: string | null;
+  verifiedById: string | null;
+  rejectionReason: string | null;
+}
+
 function storePath(storeId: string, suffix: string) {
   return `/api/store/${storeId}${suffix}`;
 }
@@ -727,6 +768,49 @@ export const storeApi = {
     apiRequest<{ items: BillingPeriod[]; total: number; page: number; limit: number }>(
       storePath(storeId, `/billing/periods${toQuery(params)}`),
     ),
+  getPaymentInstructions: (storeId: string) =>
+    apiRequest<{
+      bkashNumber: string;
+      bkashType: string;
+      bankName: string;
+      bankAccountName: string;
+      bankAccountNumber: string;
+      bankRoutingNumber: string;
+      notes: string;
+    }>(storePath(storeId, '/payment-instructions')),
+  getCurrentInvoice: (storeId: string) =>
+    apiRequest<Invoice | null>(storePath(storeId, '/invoices/current')),
+  getInvoices: (storeId: string, params: { page?: number; limit?: number } = {}) =>
+    apiRequest<{ items: Invoice[]; total: number; page: number; limit: number }>(
+      storePath(storeId, `/invoices${toQuery(params)}`),
+    ),
+  getInvoiceDetail: (storeId: string, invoiceId: string) =>
+    apiRequest<{ invoice: Invoice; payments: MerchantPayment[]; availableCredit: number }>(
+      storePath(storeId, `/invoices/${invoiceId}`),
+    ),
+  getCreditBalance: (storeId: string) =>
+    apiRequest<{ balance: number }>(storePath(storeId, '/credit')),
+  listMyPayments: (storeId: string) =>
+    apiRequest<MerchantPayment[]>(storePath(storeId, '/merchant-payments')),
+  submitPaymentClaim: (
+    storeId: string,
+    body: {
+      invoiceId: string;
+      method: MerchantPaymentMethod;
+      amount: number;
+      referenceId: string;
+      transferDate: string;
+      note?: string;
+    },
+  ) =>
+    apiRequest<MerchantPayment>(storePath(storeId, '/merchant-payments'), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  cancelPaymentClaim: (storeId: string, paymentId: string) =>
+    apiRequest<MerchantPayment>(storePath(storeId, `/merchant-payments/${paymentId}/cancel`), {
+      method: 'POST',
+    }),
   listStaff: (storeId: string) =>
     apiRequest<StaffRow[] | { data?: StaffRow[]; items?: StaffRow[] }>(
       storePath(storeId, '/staff'),

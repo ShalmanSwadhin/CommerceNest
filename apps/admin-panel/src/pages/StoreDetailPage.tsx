@@ -134,6 +134,136 @@ function StoreBillingCard({ storeId }: { storeId: string }) {
   );
 }
 
+const invoiceStatusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
+  DRAFT: 'neutral',
+  ISSUED: 'caution',
+  PARTIALLY_PAID: 'caution',
+  PAID: 'success',
+  OVERDUE: 'danger',
+  VOID: 'neutral',
+};
+
+const invoiceStatusLabel: Record<string, string> = {
+  DRAFT: 'Draft',
+  ISSUED: 'Awaiting payment',
+  PARTIALLY_PAID: 'Partially paid',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  VOID: 'Void',
+};
+
+const paymentStatusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
+  PENDING_VERIFICATION: 'caution',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'neutral',
+};
+
+const paymentStatusLabel: Record<string, string> = {
+  PENDING_VERIFICATION: 'Pending verification',
+  APPROVED: 'Verified',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+};
+
+function StoreInvoicesCard({ storeId }: { storeId: string }) {
+  const invoicesQ = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'invoices'],
+    queryFn: () => adminApi.getStoreInvoices(storeId, { limit: 8 }),
+  });
+  const creditQ = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'credit'],
+    queryFn: () => adminApi.getStoreCredit(storeId),
+  });
+  const paymentsQ = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'merchant-payments'],
+    queryFn: () => adminApi.getStoreMerchantPayments(storeId),
+  });
+  if (invoicesQ.isLoading || !invoicesQ.data) return null;
+  const invoices = invoicesQ.data.items;
+  const payments = paymentsQ.data ?? [];
+
+  return (
+    <Card elevated padding="lg" className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink">Invoices &amp; merchant credit</h3>
+        <div className="text-right">
+          <p className="text-xs text-ink-tertiary">Credit balance</p>
+          <p className="font-semibold text-ink">{formatBdt(creditQ.data?.balance ?? 0)}</p>
+        </div>
+      </div>
+      {invoices.length === 0 ? (
+        <p className="text-sm text-ink-secondary">No invoices yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs text-ink-tertiary">
+                <th className="pb-2 pr-4 font-medium">Invoice</th>
+                <th className="pb-2 pr-4 font-medium">Issued</th>
+                <th className="pb-2 pr-4 font-medium">Due</th>
+                <th className="pb-2 pr-4 font-medium text-right">Total</th>
+                <th className="pb-2 pr-4 font-medium text-right">Due amount</th>
+                <th className="pb-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id} className="border-t border-line">
+                  <td className="py-2 pr-4 font-medium">{inv.invoiceNumber}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{formatDate(inv.issueDate)}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{formatDate(inv.dueDate)}</td>
+                  <td className="py-2 pr-4 text-right">{formatBdt(inv.totalAmount)}</td>
+                  <td className="py-2 pr-4 text-right font-medium">{formatBdt(inv.amountDue)}</td>
+                  <td className="py-2">
+                    <Badge tone={invoiceStatusTone[inv.status] ?? 'neutral'}>
+                      {invoiceStatusLabel[inv.status] ?? inv.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {payments.length > 0 ? (
+        <div className="border-t border-line pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase text-ink-tertiary">Payment history</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-xs text-ink-tertiary">
+                  <th className="pb-2 pr-4 font-medium">Submitted</th>
+                  <th className="pb-2 pr-4 font-medium">Method</th>
+                  <th className="pb-2 pr-4 font-medium text-right">Amount</th>
+                  <th className="pb-2 pr-4 font-medium">Reference</th>
+                  <th className="pb-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-t border-line">
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatDate(p.submittedAt)}</td>
+                    <td className="py-2 pr-4">{p.method === 'MANUAL_BKASH' ? 'bKash' : 'Bank transfer'}</td>
+                    <td className="py-2 pr-4 text-right">{formatBdt(p.amount)}</td>
+                    <td className="py-2 pr-4">{p.referenceId}</td>
+                    <td className="py-2">
+                      <Badge tone={paymentStatusTone[p.status] ?? 'neutral'}>
+                        {paymentStatusLabel[p.status] ?? p.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 const statusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
   ACTIVE: 'success',
   PENDING_SETUP: 'caution',
@@ -217,6 +347,7 @@ export function StoreDetailPage() {
 
       <StoreUsageCard storeId={store.id} />
       <StoreBillingCard storeId={store.id} />
+      <StoreInvoicesCard storeId={store.id} />
 
       <Card elevated padding="lg" className="space-y-4">
         <h3 className="text-sm font-semibold text-ink">Owner</h3>

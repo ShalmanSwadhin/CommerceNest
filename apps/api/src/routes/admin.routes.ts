@@ -19,6 +19,8 @@ import * as themePresetService from '../services/theme-preset.service.js';
 import * as notificationService from '../services/notification.service.js';
 import * as subscriptionService from '../services/subscription.service.js';
 import * as billingService from '../services/billing.service.js';
+import * as invoiceService from '../services/invoice.service.js';
+import * as merchantPaymentService from '../services/merchant-payment.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -544,6 +546,109 @@ adminRouter.get(
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const storeId = typeof req.query.storeId === 'string' ? req.query.storeId : undefined;
     res.json(await billingService.listAllStoreBilling({ page, limit, storeId }));
+  }),
+);
+
+// --- Invoices & merchant payments (Master Admin) ---
+adminRouter.get(
+  '/billing/summary',
+  asyncHandler(async (_req, res) => {
+    res.json(await invoiceService.getPlatformBillingSummary());
+  }),
+);
+
+adminRouter.get(
+  '/invoices',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const storeId = typeof req.query.storeId === 'string' ? req.query.storeId : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.json(await invoiceService.listAllInvoices({ page, limit, storeId, status }));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/invoices',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await invoiceService.listInvoicesForStore(param(req, 'id'), { page, limit }));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/invoices/:invoiceId',
+  asyncHandler(async (req, res) => {
+    res.json(await invoiceService.getInvoiceDetail(param(req, 'id'), param(req, 'invoiceId')));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/credit',
+  asyncHandler(async (req, res) => {
+    res.json({ balance: await invoiceService.getStoreCreditBalance(param(req, 'id')) });
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/merchant-payments',
+  asyncHandler(async (req, res) => {
+    res.json(await merchantPaymentService.listPaymentsForStore(param(req, 'id')));
+  }),
+);
+
+// Deliberately namespaced /merchant-payments (never /payments/*) — this
+// codebase already has customer-order bKash verification at /payments/* just
+// above; reusing that prefix here would silently collide (Express matches
+// route registration order, so the older /payments/:orderId/approve route
+// would shadow this one forever). Keeping the two payment systems on
+// distinct URL prefixes matches the requirement that they stay entirely
+// separate systems.
+adminRouter.get(
+  '/merchant-payments/pending',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await merchantPaymentService.listPendingPayments({ page, limit }));
+  }),
+);
+
+adminRouter.post(
+  '/merchant-payments/:id/approve',
+  asyncHandler(async (req, res) => {
+    const result = await merchantPaymentService.approvePayment(param(req, 'id'), req.user!.id);
+    await auditService.writeAuditLog({
+      actorId: req.user!.id,
+      actorRole: req.user!.role as never,
+      action: 'MERCHANT_PAYMENT_APPROVED',
+      targetType: 'MerchantPayment',
+      targetId: param(req, 'id'),
+      ip: req.ip,
+      userAgent: req.header('user-agent') ?? undefined,
+    });
+    res.json(result);
+  }),
+);
+
+const rejectPaymentSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
+
+adminRouter.post(
+  '/merchant-payments/:id/reject',
+  asyncHandler(async (req, res) => {
+    const { reason } = rejectPaymentSchema.parse(req.body);
+    const result = await merchantPaymentService.rejectPayment(param(req, 'id'), req.user!.id, reason);
+    await auditService.writeAuditLog({
+      actorId: req.user!.id,
+      actorRole: req.user!.role as never,
+      action: 'MERCHANT_PAYMENT_REJECTED',
+      targetType: 'MerchantPayment',
+      targetId: param(req, 'id'),
+      metadata: { reason },
+      ip: req.ip,
+      userAgent: req.header('user-agent') ?? undefined,
+    });
+    res.json(result);
   }),
 );
 

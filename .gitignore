@@ -22,4 +22,5 @@ uploads/
 .cache/
 apps/api/.pg-test-data/
 **/.pg-test-data/
+**/.pg-test-data-*/
 .pg-dev-data/

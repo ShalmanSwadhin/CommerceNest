@@ -27,6 +27,8 @@ import * as returnService from '../services/return.service.js';
 import * as onboardingService from '../services/onboarding.service.js';
 import * as subscriptionService from '../services/subscription.service.js';
 import * as billingService from '../services/billing.service.js';
+import * as invoiceService from '../services/invoice.service.js';
+import * as merchantPaymentService from '../services/merchant-payment.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -629,6 +631,93 @@ storeRouter.get(
     const page = req.query.page ? Number(req.query.page) : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     res.json(await billingService.listBillingPeriods(scopedStoreId(req), { page, limit }));
+  }),
+);
+
+// Invoices & merchant payments
+const BILLING_ROLES = [UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN] as const;
+
+storeRouter.get(
+  '/payment-instructions',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (_req, res) => {
+    res.json(await invoiceService.getPaymentInstructions());
+  }),
+);
+
+storeRouter.get(
+  '/invoices/current',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json(await invoiceService.getCurrentInvoiceForStore(scopedStoreId(req)));
+  }),
+);
+
+storeRouter.get(
+  '/invoices',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await invoiceService.listInvoicesForStore(scopedStoreId(req), { page, limit }));
+  }),
+);
+
+storeRouter.get(
+  '/invoices/:invoiceId',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json(await invoiceService.getInvoiceDetail(scopedStoreId(req), param(req, 'invoiceId')));
+  }),
+);
+
+storeRouter.get(
+  '/credit',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json({ balance: await invoiceService.getStoreCreditBalance(scopedStoreId(req)) });
+  }),
+);
+
+// Namespaced /merchant-payments (never bare /payments/*) — this router
+// already has customer-order bKash routes at /payments/pending-bkash,
+// /payments/bkash/approve, /payments/bkash/reject. Distinct prefixes keep
+// merchant-billing payments and customer-order payments unambiguous at the
+// URL level, matching the requirement that they stay entirely separate
+// systems (and avoids any future Express route-shadowing risk).
+storeRouter.get(
+  '/merchant-payments',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json(await merchantPaymentService.listPaymentsForStore(scopedStoreId(req)));
+  }),
+);
+
+const submitPaymentClaimSchema = z
+  .object({
+    invoiceId: z.string().cuid(),
+    method: z.enum(['MANUAL_BKASH', 'MANUAL_BANK_TRANSFER']),
+    amount: z.number().positive(),
+    referenceId: z.string().trim().min(2).max(120),
+    transferDate: z.coerce.date(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+storeRouter.post(
+  '/merchant-payments',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    const data = submitPaymentClaimSchema.parse(req.body);
+    res.status(201).json(await merchantPaymentService.submitPaymentClaim(scopedStoreId(req), data));
+  }),
+);
+
+storeRouter.post(
+  '/merchant-payments/:id/cancel',
+  requireRoles(...BILLING_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json(await merchantPaymentService.cancelPaymentClaim(scopedStoreId(req), param(req, 'id')));
   }),
 );
 

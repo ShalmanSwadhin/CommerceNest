@@ -10,7 +10,7 @@ import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { assertStoreMatch } from '../middleware/storeScope.js';
-import { assertWithinProductLimit } from './subscription.service.js';
+import { assertWithinProductLimitTx, withStoreLock } from './subscription.service.js';
 
 export async function listProducts(storeId: string, query: unknown) {
   const q = productListQuerySchema.parse(query);
@@ -54,38 +54,46 @@ export async function createProduct(
 ) {
   const data = createProductSchema.parse(input);
 
-  await assertWithinProductLimit(storeId);
+  // The limit only applies when the new product is actually going to be
+  // ACTIVE — a DRAFT product doesn't consume a slot, and shouldn't be
+  // blocked by one being full. Locked (see withStoreLock) so a concurrent
+  // create/activation for the same store can't both pass the same count.
+  const product = await withStoreLock(storeId, async (tx) => {
+    if (data.status === ProductStatus.ACTIVE) {
+      await assertWithinProductLimitTx(tx, storeId);
+    }
 
-  const existing = await prisma.product.findUnique({
-    where: { storeId_slug: { storeId, slug: data.slug } },
-  });
-  if (existing) throw AppError.conflict('Product slug already exists');
+    const existing = await tx.product.findUnique({
+      where: { storeId_slug: { storeId, slug: data.slug } },
+    });
+    if (existing) throw AppError.conflict('Product slug already exists');
 
-  const product = await prisma.product.create({
-    data: {
-      storeId,
-      categoryId: data.categoryId,
-      name: data.name,
-      slug: data.slug,
-      description: data.description,
-      basePrice: data.basePrice,
-      status: data.status,
-      images: data.images,
-      seoTitle: data.seoTitle,
-      seoDescription: data.seoDescription,
-      lowStockThreshold: data.lowStockThreshold,
-      variants: {
-        create: data.variants.map((v) => ({
-          storeId,
-          sku: v.sku,
-          size: v.size,
-          color: v.color,
-          priceOverride: v.priceOverride,
-          stock: v.stock,
-        })),
+    return tx.product.create({
+      data: {
+        storeId,
+        categoryId: data.categoryId,
+        name: data.name,
+        slug: data.slug,
+        description: data.description,
+        basePrice: data.basePrice,
+        status: data.status,
+        images: data.images,
+        seoTitle: data.seoTitle,
+        seoDescription: data.seoDescription,
+        lowStockThreshold: data.lowStockThreshold,
+        variants: {
+          create: data.variants.map((v) => ({
+            storeId,
+            sku: v.sku,
+            size: v.size,
+            color: v.color,
+            priceOverride: v.priceOverride,
+            stock: v.stock,
+          })),
+        },
       },
-    },
-    include: { variants: true },
+      include: { variants: true },
+    });
   });
 
   emitAfterCommit('ProductCreated', {
@@ -111,30 +119,50 @@ export async function updateProduct(
   const existing = await getProduct(storeId, productId);
   assertStoreMatch(existing.storeId, storeId);
 
-  if (data.slug && data.slug !== existing.slug) {
-    const clash = await prisma.product.findUnique({
-      where: { storeId_slug: { storeId, slug: data.slug } },
-    });
-    if (clash) throw AppError.conflict('Product slug already exists');
-  }
+  // Only a transition INTO active consumes a slot — editing an already-active
+  // product's other fields, or moving it out of active, never needs a check.
+  // Locked for the same reason as createProduct: two concurrent activations
+  // must not both pass the same stale count.
+  const activating =
+    data.status !== undefined &&
+    data.status === ProductStatus.ACTIVE &&
+    existing.status !== ProductStatus.ACTIVE;
 
-  const product = await prisma.product.update({
-    where: { id: productId },
-    data: {
-      name: data.name,
-      slug: data.slug,
-      description: data.description === null ? null : data.description,
-      categoryId: data.categoryId === null ? null : data.categoryId,
-      basePrice: data.basePrice,
-      status: data.status,
-      images: data.images as Prisma.InputJsonValue | undefined,
-      seoTitle: data.seoTitle === null ? null : data.seoTitle,
-      seoDescription: data.seoDescription === null ? null : data.seoDescription,
-      lowStockThreshold: data.lowStockThreshold,
-    },
-    include: { variants: true },
+  await withStoreLock(storeId, async (tx) => {
+    if (data.slug && data.slug !== existing.slug) {
+      const clash = await tx.product.findUnique({
+        where: { storeId_slug: { storeId, slug: data.slug } },
+      });
+      if (clash) throw AppError.conflict('Product slug already exists');
+    }
+
+    if (activating) {
+      await assertWithinProductLimitTx(tx, storeId);
+    }
+
+    return tx.product.update({
+      where: { id: productId },
+      data: {
+        name: data.name,
+        slug: data.slug,
+        description: data.description === null ? null : data.description,
+        categoryId: data.categoryId === null ? null : data.categoryId,
+        basePrice: data.basePrice,
+        status: data.status,
+        images: data.images as Prisma.InputJsonValue | undefined,
+        seoTitle: data.seoTitle === null ? null : data.seoTitle,
+        seoDescription: data.seoDescription === null ? null : data.seoDescription,
+        lowStockThreshold: data.lowStockThreshold,
+      },
+      include: { variants: true },
+    });
   });
 
+  // Variant sync is unrelated to the active-product-count race, so it stays
+  // outside the locked transaction exactly as before this change — bundling
+  // it in would mean a caught FK-restrict failure on one variant delete
+  // (see the try/catch below) poisons the whole Postgres transaction and
+  // fails every later statement in it, including the fallback update.
   if (data.variants) {
     const incomingIds = new Set(data.variants.filter((v) => v.id).map((v) => v.id));
     const toRemove = existing.variants

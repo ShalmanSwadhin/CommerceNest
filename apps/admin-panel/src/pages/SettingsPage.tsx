@@ -13,10 +13,32 @@ function settingsMap(data: unknown): Record<string, unknown> {
   return data as Record<string, unknown>;
 }
 
+interface PaymentInstructions {
+  bkashNumber: string;
+  bkashType: string;
+  bankName: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankRoutingNumber: string;
+  notes: string;
+}
+
+const EMPTY_PAYMENT_INSTRUCTIONS: PaymentInstructions = {
+  bkashNumber: '',
+  bkashType: 'Merchant/Send Money',
+  bankName: '',
+  bankAccountName: '',
+  bankAccountNumber: '',
+  bankRoutingNumber: '',
+  notes: '',
+};
+
 export function SettingsPage() {
   const { toast } = useToast();
   const [supportEmail, setSupportEmail] = useState('');
   const [platformName, setPlatformName] = useState('CommerceNest');
+  const [paymentTermDays, setPaymentTermDays] = useState('7');
+  const [instructions, setInstructions] = useState<PaymentInstructions>(EMPTY_PAYMENT_INSTRUCTIONS);
 
   const q = useQuery({
     queryKey: ['admin', 'settings'],
@@ -29,6 +51,12 @@ export function SettingsPage() {
     const map = settingsMap(q.data);
     if (typeof map.supportEmail === 'string') setSupportEmail(map.supportEmail);
     if (typeof map.platformName === 'string') setPlatformName(map.platformName);
+    if (typeof map['billing.invoicePaymentTermDays'] === 'number') {
+      setPaymentTermDays(String(map['billing.invoicePaymentTermDays']));
+    }
+    if (map['billing.paymentInstructions'] && typeof map['billing.paymentInstructions'] === 'object') {
+      setInstructions({ ...EMPTY_PAYMENT_INSTRUCTIONS, ...(map['billing.paymentInstructions'] as Partial<PaymentInstructions>) });
+    }
   }, [q.data]);
 
   const mut = useMutation({
@@ -38,6 +66,21 @@ export function SettingsPage() {
         { key: 'platformName', value: platformName },
       ]),
     onSuccess: () => toast({ title: 'Settings saved', tone: 'success' }),
+    onError: (err) =>
+      toast({
+        title: 'Save failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const billingMut = useMutation({
+    mutationFn: () =>
+      adminApi.updateSettings([
+        { key: 'billing.invoicePaymentTermDays', value: Number(paymentTermDays) },
+        { key: 'billing.paymentInstructions', value: instructions },
+      ]),
+    onSuccess: () => toast({ title: 'Billing settings saved', tone: 'success' }),
     onError: (err) =>
       toast({
         title: 'Save failed',
@@ -85,6 +128,92 @@ export function SettingsPage() {
         </FormField>
         <Button loading={mut.isPending} onClick={() => mut.mutate()}>
           Save changes
+        </Button>
+      </Card>
+
+      <Card elevated className="max-w-xl space-y-4">
+        <div>
+          <h3 className="font-semibold">Merchant billing</h3>
+          <p className="text-sm text-ink-secondary">
+            What merchants see when they open "Billing" and choose how to pay their invoice. Without this
+            configured, merchants have no way to know where to send a manual payment.
+          </p>
+        </div>
+        <FormField
+          label="Invoice payment term (days)"
+          htmlFor="paymentTermDays"
+          description="How many days after issuance an invoice's due date is set. Already-issued invoices keep their original due date."
+        >
+          <Input
+            id="paymentTermDays"
+            type="number"
+            min={1}
+            max={90}
+            value={paymentTermDays}
+            onChange={(e) => setPaymentTermDays(e.target.value)}
+          />
+        </FormField>
+        <div className="border-t border-line pt-4">
+          <p className="mb-3 text-xs font-semibold uppercase text-ink-tertiary">bKash</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="bKash number" htmlFor="bkashNumber">
+              <Input
+                id="bkashNumber"
+                value={instructions.bkashNumber}
+                onChange={(e) => setInstructions((s) => ({ ...s, bkashNumber: e.target.value }))}
+              />
+            </FormField>
+            <FormField label="Account type" htmlFor="bkashType">
+              <Input
+                id="bkashType"
+                value={instructions.bkashType}
+                onChange={(e) => setInstructions((s) => ({ ...s, bkashType: e.target.value }))}
+              />
+            </FormField>
+          </div>
+        </div>
+        <div className="border-t border-line pt-4">
+          <p className="mb-3 text-xs font-semibold uppercase text-ink-tertiary">Bank transfer</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Bank name" htmlFor="bankName">
+              <Input
+                id="bankName"
+                value={instructions.bankName}
+                onChange={(e) => setInstructions((s) => ({ ...s, bankName: e.target.value }))}
+              />
+            </FormField>
+            <FormField label="Account name" htmlFor="bankAccountName">
+              <Input
+                id="bankAccountName"
+                value={instructions.bankAccountName}
+                onChange={(e) => setInstructions((s) => ({ ...s, bankAccountName: e.target.value }))}
+              />
+            </FormField>
+            <FormField label="Account number" htmlFor="bankAccountNumber">
+              <Input
+                id="bankAccountNumber"
+                value={instructions.bankAccountNumber}
+                onChange={(e) => setInstructions((s) => ({ ...s, bankAccountNumber: e.target.value }))}
+              />
+            </FormField>
+            <FormField label="Routing number" htmlFor="bankRoutingNumber">
+              <Input
+                id="bankRoutingNumber"
+                value={instructions.bankRoutingNumber}
+                onChange={(e) => setInstructions((s) => ({ ...s, bankRoutingNumber: e.target.value }))}
+              />
+            </FormField>
+          </div>
+        </div>
+        <FormField label="Notes for merchants (optional)" htmlFor="paymentNotes">
+          <Input
+            id="paymentNotes"
+            value={instructions.notes}
+            onChange={(e) => setInstructions((s) => ({ ...s, notes: e.target.value }))}
+          />
+        </FormField>
+        <Button loading={billingMut.isPending} onClick={() => billingMut.mutate()}>
+          Save billing settings
         </Button>
       </Card>
     </div>

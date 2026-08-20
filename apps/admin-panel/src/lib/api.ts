@@ -701,6 +701,36 @@ export const adminApi = {
       `/api/admin/billing${toQuery(params)}`,
     ),
 
+  // --- Invoices & merchant payments ---
+  getBillingSummary: () => apiRequest<PlatformBillingSummary>('/api/admin/billing/summary'),
+  listAllInvoices: (params: { page?: number; limit?: number; storeId?: string; status?: string } = {}) =>
+    apiRequest<{ items: Invoice[]; total: number; page: number; limit: number }>(
+      `/api/admin/invoices${toQuery(params)}`,
+    ),
+  getStoreInvoices: (storeId: string, params: { page?: number; limit?: number } = {}) =>
+    apiRequest<{ items: Invoice[]; total: number; page: number; limit: number }>(
+      `/api/admin/stores/${storeId}/invoices${toQuery(params)}`,
+    ),
+  getStoreInvoiceDetail: (storeId: string, invoiceId: string) =>
+    apiRequest<{ invoice: Invoice; payments: MerchantPayment[]; availableCredit: number }>(
+      `/api/admin/stores/${storeId}/invoices/${invoiceId}`,
+    ),
+  getStoreCredit: (storeId: string) =>
+    apiRequest<{ balance: number }>(`/api/admin/stores/${storeId}/credit`),
+  getStoreMerchantPayments: (storeId: string) =>
+    apiRequest<MerchantPayment[]>(`/api/admin/stores/${storeId}/merchant-payments`),
+  listPendingPayments: (params: { page?: number; limit?: number } = {}) =>
+    apiRequest<{ items: MerchantPayment[]; total: number; page: number; limit: number }>(
+      `/api/admin/merchant-payments/pending${toQuery(params)}`,
+    ),
+  approveMerchantPayment: (paymentId: string) =>
+    apiRequest<MerchantPayment>(`/api/admin/merchant-payments/${paymentId}/approve`, { method: 'POST' }),
+  rejectMerchantPayment: (paymentId: string, reason: string) =>
+    apiRequest<MerchantPayment>(`/api/admin/merchant-payments/${paymentId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
   // --- Notifications ---
   listNotifications: (params: Record<string, string | number | boolean | undefined> = {}) =>
     apiRequest<{ items: AdminNotification[]; unreadCount: number; total: number }>(
@@ -805,6 +835,57 @@ export interface BillingLedgerEntry {
   referenceType: string;
   referenceId: string;
   createdAt: string;
+}
+
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'VOID';
+export type MerchantPaymentMethod = 'MANUAL_BKASH' | 'MANUAL_BANK_TRANSFER';
+export type MerchantPaymentStatus = 'PENDING_VERIFICATION' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface Invoice {
+  id: string;
+  storeId: string;
+  billingPeriodId: string;
+  invoiceNumber: string;
+  issueDate: string;
+  dueDate: string;
+  currency: string;
+  subscriptionAmount: number;
+  platformFeeAmount: number;
+  adjustmentAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  creditApplied: number;
+  amountDue: number;
+  status: InvoiceStatus;
+  store?: { id: string; name: string; slug: string };
+}
+
+export interface MerchantPayment {
+  id: string;
+  storeId: string;
+  invoiceId: string;
+  method: MerchantPaymentMethod;
+  amount: number;
+  currency: string;
+  referenceId: string;
+  transferDate: string;
+  note: string | null;
+  status: MerchantPaymentStatus;
+  submittedAt: string;
+  verifiedAt: string | null;
+  verifiedById: string | null;
+  rejectionReason: string | null;
+  store?: { id: string; name: string; slug: string };
+  invoice?: { id: string; invoiceNumber: string; totalAmount: number; dueDate: string };
+}
+
+export interface PlatformBillingSummary {
+  totalInvoiced: number;
+  totalCollected: number;
+  totalOutstanding: number;
+  totalMerchantCredit: number;
+  pendingPaymentClaims: number;
+  overdueInvoices: number;
 }
 
 export interface AdminNotification {

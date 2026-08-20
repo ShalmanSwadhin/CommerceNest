@@ -17,6 +17,7 @@ import { CouponsPage } from './pages/CouponsPage';
 import { ReturnsPage } from './pages/ReturnsPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { PaymentsPage } from './pages/PaymentsPage';
+import { BillingPage } from './pages/BillingPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { CmsPage } from './pages/CmsPage';
 import { MediaPage } from './pages/MediaPage';
@@ -225,6 +226,14 @@ export default function App() {
                     element={
                       <RequirePermission perm="payments">
                         <PaymentsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="billing"
+                    element={
+                      <RequirePermission perm="billing">
+                        <BillingPage />
                       </RequirePermission>
                     }
                   />

@@ -36,9 +36,13 @@ async function makeStore(overrides: { planTier?: string } = {}) {
     password: 'TestPass123!',
     confirmPassword: 'TestPass123!',
   });
-  if (overrides.planTier) {
-    await prisma.store.update({ where: { id: store.id }, data: { planTier: overrides.planTier } });
-  }
+  // These tests exercise real subscription/platform-fee billing, which only
+  // applies to a converted (non-trial) store — trial stores are correctly
+  // billed nothing (see the "Trial stores are never billed" suite below).
+  await prisma.store.update({
+    where: { id: store.id },
+    data: { isTrial: false, ...(overrides.planTier ? { planTier: overrides.planTier } : {}) },
+  });
   const owner = await prisma.user.findUniqueOrThrow({ where: { id: store.ownerUserId } });
   return { storeId: store.id, ownerId: owner.id };
 }
@@ -376,6 +380,111 @@ describe.skipIf(!hasDatabase)('Platform fee — booking, eligibility, idempotenc
   });
 });
 
+describe.skipIf(!hasDatabase)('Exact decimal money arithmetic', () => {
+  // These three inputs are not arbitrary — each is a verified case where
+  // `Math.round(eligible * rate * 100) / 100` (naive JS float arithmetic)
+  // disagrees with the mathematically-correct round-half-up result, one
+  // input for each real plan rate:
+  //   29    × 0.005  (Starter)  → naive 0.14, correct 0.15
+  //   36.25 × 0.004  (Business) → naive 0.14, correct 0.15
+  //   58    × 0.0025 (Pro)      → naive 0.14, correct 0.15
+  // If billing.service.ts regressed to plain `number` arithmetic, these
+  // would silently under-charge by one paisa and this test would catch it.
+  it.each([
+    { label: 'Starter rate (0.50%)', eligible: 29, rate: 0.005, expectedFee: 0.15 },
+    { label: 'Business rate (0.40%)', eligible: 36.25, rate: 0.004, expectedFee: 0.15 },
+    { label: 'Pro rate (0.25%)', eligible: 58, rate: 0.0025, expectedFee: 0.15 },
+  ])('$label: eligible=$eligible books the exact correct fee, not the float-rounded one', async ({ eligible, rate, expectedFee }) => {
+    const planSlug = await makeTestPlan({ platformFeeRate: rate });
+    const { storeId, ownerId } = await makeStore({ planTier: planSlug });
+    const order = await createDeliverableOrder(storeId, { subtotal: eligible });
+    await deliverOrder(storeId, order.id, ownerId);
+
+    const fee = await prisma.billingLedgerEntry.findFirst({
+      where: { storeId, referenceId: order.id, type: 'PLATFORM_FEE' },
+    });
+    expect(Number(fee!.amount)).toBe(expectedFee);
+  });
+
+  it('a repeating-decimal refund ratio (1/3) rounds correctly, not to a truncated float', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.1 });
+    const { storeId, ownerId } = await makeStore({ planTier: planSlug });
+    // Fee = 1000 × 0.10 = 100.00 exactly.
+    const order = await createDeliverableOrder(storeId, { subtotal: 1000 });
+    await deliverOrder(storeId, order.id, ownerId);
+
+    // Refund exactly a third of the order — ratio is a repeating decimal
+    // (0.3333...), so the adjustment (100 × 1/3 = 33.333...) must round to
+    // 33.33, not silently drift from repeated float division.
+    const ret = await prisma.returnRequest.create({
+      data: { storeId, orderId: order.id, customerId: order.customerId, reason: 'test', status: 'ITEM_RECEIVED' },
+    });
+    await returnService.completeRefund(storeId, ret.id, {
+      refundAmount: Number(order.total) / 3,
+      refundMethod: 'CASH',
+    });
+
+    const adj = await prisma.billingLedgerEntry.findFirst({
+      where: { storeId, referenceId: ret.id, type: 'ADJUSTMENT' },
+    });
+    expect(Number(adj!.amount)).toBe(-33.33);
+  });
+
+  it('multiple sequential adjustments on the same store never drift from exact expected totals', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.0025 }); // Pro rate
+    const { storeId, ownerId } = await makeStore({ planTier: planSlug });
+
+    // Three orders whose fees individually expose the float-rounding trap
+    // (all three verified mismatches from the Pro-rate table above and a
+    // clean control value), booked back-to-back into the same period.
+    const inputs = [58, 410, 878, 100];
+    let expectedTotalFee = 0;
+    for (const subtotal of inputs) {
+      const order = await createDeliverableOrder(storeId, { subtotal });
+      await deliverOrder(storeId, order.id, ownerId);
+      const fee = await prisma.billingLedgerEntry.findFirst({
+        where: { storeId, referenceId: order.id, type: 'PLATFORM_FEE' },
+      });
+      expectedTotalFee += Number(fee!.amount);
+    }
+    // Only rounded once, at the end, to guard against trailing float dust in
+    // the test's own oracle sum — each individual fee is already an exact
+    // 2dp value, and the actual implementation accumulates these via a
+    // Postgres NUMERIC increment, not JS float addition.
+    expectedTotalFee = Math.round(expectedTotalFee * 100) / 100;
+
+    const period = await billingService.getOrCreateCurrentBillingPeriod(storeId);
+    expect(Number(period.platformFeeAmount)).toBe(expectedTotalFee);
+  });
+
+  it('small amounts round to zero rather than throwing or storing a fractional-paisa value', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.0025 }); // Pro rate
+    const { storeId, ownerId } = await makeStore({ planTier: planSlug });
+    // 1 × 0.0025 = 0.0025 → rounds down to 0.00, so no fee entry is booked
+    // at all (bookPlatformFeeForOrder treats a zero fee as a no-op).
+    const order = await createDeliverableOrder(storeId, { subtotal: 1 });
+    await deliverOrder(storeId, order.id, ownerId);
+
+    const fee = await prisma.billingLedgerEntry.findFirst({
+      where: { storeId, referenceId: order.id, type: 'PLATFORM_FEE' },
+    });
+    expect(fee).toBeNull();
+  });
+
+  it('large amounts remain exact (no precision loss at higher magnitudes)', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.005 }); // Starter rate
+    const { storeId, ownerId } = await makeStore({ planTier: planSlug });
+    const order = await createDeliverableOrder(storeId, { subtotal: 987654.32 });
+    await deliverOrder(storeId, order.id, ownerId);
+
+    const fee = await prisma.billingLedgerEntry.findFirst({
+      where: { storeId, referenceId: order.id, type: 'PLATFORM_FEE' },
+    });
+    // 987654.32 × 0.005 = 4938.2716 → round-half-up 2dp = 4938.27
+    expect(Number(fee!.amount)).toBe(4938.27);
+  });
+});
+
 describe.skipIf(!hasDatabase)('Billing period snapshotting', () => {
   it('an already-open period keeps its original rate even after the Package rate changes', async () => {
     const planSlug = await makeTestPlan({ platformFeeRate: 0.05 });
@@ -406,6 +515,93 @@ describe.skipIf(!hasDatabase)('Billing period snapshotting', () => {
     });
     expect(charges).toHaveLength(1);
     expect(Number(charges[0]!.amount)).toBeCloseTo(999, 2);
+  });
+});
+
+describe.skipIf(!hasDatabase)('Trial stores are never billed', () => {
+  it('a fresh trial store\'s billing period has zero subscription price and zero platform fee rate', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.05 });
+    const pkg = await packageService.getPackageBySlug(planSlug);
+    await packageService.updatePackage(pkg!.id, { monthlyPrice: 999 }, await masterAdminActor());
+
+    // A real trial store, exactly as trialService.createTrialLead produces
+    // one — isTrial: true, not converted via makeStore's own override.
+    const slug = uniqueSlug('trialbill');
+    const { store } = await trialService.createTrialLead({
+      prospectName: 'Trial Owner',
+      businessName: `Trial Bill Test ${slug}`,
+      phone: `019${String(Math.floor(10000000 + Math.random() * 89999999))}`,
+      email: `${slug}@example.com`,
+      password: 'TestPass123!',
+      confirmPassword: 'TestPass123!',
+    });
+    await prisma.store.update({ where: { id: store.id }, data: { planTier: planSlug } });
+
+    const period = await billingService.getOrCreateCurrentBillingPeriod(store.id);
+    expect(Number(period.subscriptionPrice)).toBe(0);
+    expect(Number(period.platformFeeRate)).toBe(0);
+
+    const charges = await prisma.billingLedgerEntry.findMany({
+      where: { storeId: store.id, type: 'SUBSCRIPTION_CHARGE' },
+    });
+    expect(charges).toHaveLength(0);
+  });
+
+  it('a trial store\'s delivered order never books a platform fee', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.05 });
+    const slug = uniqueSlug('trialfee');
+    const { store } = await trialService.createTrialLead({
+      prospectName: 'Trial Owner',
+      businessName: `Trial Fee Test ${slug}`,
+      phone: `019${String(Math.floor(10000000 + Math.random() * 89999999))}`,
+      email: `${slug}@example.com`,
+      password: 'TestPass123!',
+      confirmPassword: 'TestPass123!',
+    });
+    await prisma.store.update({ where: { id: store.id }, data: { planTier: planSlug } });
+    const owner = await prisma.user.findUniqueOrThrow({ where: { id: store.ownerUserId } });
+
+    const order = await createDeliverableOrder(store.id, { subtotal: 1000 });
+    await deliverOrder(store.id, order.id, owner.id);
+
+    const entries = await prisma.billingLedgerEntry.findMany({
+      where: { storeId: store.id, referenceId: order.id, type: 'PLATFORM_FEE' },
+    });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('converting a trial to paid never retroactively charges the already-open trial period, but the next period bills normally', async () => {
+    const planSlug = await makeTestPlan({ platformFeeRate: 0.05 });
+    const pkg = await packageService.getPackageBySlug(planSlug);
+    await packageService.updatePackage(pkg!.id, { monthlyPrice: 999 }, await masterAdminActor());
+
+    const slug = uniqueSlug('trialconvert');
+    const { store } = await trialService.createTrialLead({
+      prospectName: 'Trial Owner',
+      businessName: `Trial Convert Test ${slug}`,
+      phone: `019${String(Math.floor(10000000 + Math.random() * 89999999))}`,
+      email: `${slug}@example.com`,
+      password: 'TestPass123!',
+      confirmPassword: 'TestPass123!',
+    });
+    await prisma.store.update({ where: { id: store.id }, data: { planTier: planSlug } });
+
+    const trialPeriod = await billingService.getOrCreateCurrentBillingPeriod(store.id);
+    expect(Number(trialPeriod.subscriptionPrice)).toBe(0);
+
+    // Convert to paid — same effect as trialService.convertTrial's Store update.
+    await prisma.store.update({ where: { id: store.id }, data: { isTrial: false, trialExpiresAt: null } });
+
+    // The already-open period (same calendar month) is never rewritten.
+    const stillTrialPeriod = await billingService.getOrCreateCurrentBillingPeriod(store.id);
+    expect(stillTrialPeriod.id).toBe(trialPeriod.id);
+    expect(Number(stillTrialPeriod.subscriptionPrice)).toBe(0);
+
+    // Existing store data survives the conversion untouched.
+    await makeProduct(store.id);
+    const reloaded = await prisma.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(reloaded.isTrial).toBe(false);
+    expect(await prisma.product.count({ where: { storeId: store.id } })).toBe(1);
   });
 });
 

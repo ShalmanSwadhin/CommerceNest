@@ -10,7 +10,13 @@ import fs from 'node:fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../../../..');
 const apiRoot = path.resolve(__dirname, '../..');
-const dbDir = path.resolve(apiRoot, '.pg-test-data');
+/** On Windows, embedded-postgres's shared-memory section is keyed off this
+ * directory's path, not the port — so a crashed prior run can leave a
+ * stale "pre-existing shared memory block" collision that persists even
+ * after changing CN_TEST_PG_PORT. CN_TEST_PG_DIR lets a one-off run pick a
+ * fresh path to sidestep that without touching the default for everyone
+ * else. */
+const dbDir = path.resolve(apiRoot, process.env.CN_TEST_PG_DIR || '.pg-test-data');
 /** Unique port avoids Windows shared-memory collisions from crashed prior runs. */
 const port = Number(process.env.CN_TEST_PG_PORT || 55441);
 

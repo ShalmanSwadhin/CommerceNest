@@ -202,8 +202,13 @@ enum BillingPeriodStatus {
 
 /**
  * SUBSCRIPTION_CHARGE / PLATFORM_FEE = positive, owed by the merchant.
- * ADJUSTMENT (e.g. a refund reducing an already-booked fee) / CREDIT
- * (promotional) / PAYMENT (money received) = negative, reduce the balance.
+ * ADJUSTMENT (e.g. a refund reducing an already-booked fee) = negative,
+ * reduces a prior charge. PAYMENT = negative, money received. CREDIT is
+ * signed both ways: positive when credit is *issued* to a store (overpayment
+ * or a refund arriving after its invoice was already paid — see
+ * MERCHANT_PAYMENT_ARCHITECTURE_PROPOSAL.md), negative when that credit is
+ * *applied* against a later invoice. A store's available credit balance is
+ * simply `SUM(amount) WHERE type = CREDIT` for that store.
  */
 enum BillingEntryType {
   SUBSCRIPTION_CHARGE
@@ -211,6 +216,27 @@ enum BillingEntryType {
   ADJUSTMENT
   CREDIT
   PAYMENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum MerchantPaymentMethod {
+  MANUAL_BKASH
+  MANUAL_BANK_TRANSFER
+}
+
+enum MerchantPaymentStatus {
+  PENDING_VERIFICATION
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +276,7 @@ model User {
   supportReplies           SupportReply[]         @relation("SupportReplyAuthor")
   trialLeadsReviewed       TrialLead[]            @relation("TrialLeadReviewer")
   domainRequestsReviewed   DomainRequest[]        @relation("DomainRequestReviewer")
+  merchantPaymentsVerified MerchantPayment[]      @relation("MerchantPaymentVerifier")
 
   @@index([storeId])
   @@index([phone])
@@ -321,6 +348,8 @@ model Store {
   trialLead          TrialLead?
   billingPeriods     BillingPeriod[]
   billingLedgerEntries BillingLedgerEntry[]
+  invoices           Invoice[]
+  merchantPayments   MerchantPayment[]
 
   @@index([status])
   @@index([ownerUserId])
@@ -1053,6 +1082,7 @@ model BillingPeriod {
 
   store   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   entries BillingLedgerEntry[]
+  invoice Invoice?
 
   @@unique([storeId, periodStart])
   @@index([storeId, status])
@@ -1090,6 +1120,101 @@ model BillingLedgerEntry {
   @@index([storeId, createdAt])
   @@index([billingPeriodId])
   @@map("billing_ledger_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Merchant billing — CommerceNest collecting money FROM a merchant. Entirely
+// separate from Order (a customer paying a merchant) — never share fields or
+// tables between the two. See MERCHANT_PAYMENT_ARCHITECTURE_PROPOSAL.md.
+// ---------------------------------------------------------------------------
+
+/**
+ * "CommerceNest is asking this merchant to pay this amount." One per
+ * BillingPeriod — `billingPeriodId` is unique, which is what makes invoice
+ * generation idempotent at the database level (closing the same period
+ * twice can never create two invoices).
+ *
+ * `subscriptionAmount`/`platformFeeAmount` are snapshotted once at issuance
+ * and never change afterward — they are the historical record of what the
+ * period actually charged. `adjustmentAmount` is the ONLY field that moves
+ * after issuance (via new, ledger-backed adjustment events — e.g. a refund
+ * on an order from this period, arriving after the invoice was already
+ * issued), and `totalAmount` is always kept equal to the sum of the three.
+ * `amountPaid`/`creditApplied` are running totals kept in sync by
+ * invoice.service.ts as payments are verified and credit is applied — never
+ * set directly by any "mark paid" shortcut. `amountDue` is deliberately NOT
+ * a stored column (computed at read time as totalAmount − amountPaid −
+ * creditApplied), matching how BillingPeriod.totalDue already works, so
+ * there's one source of truth, not two that can drift.
+ */
+model Invoice {
+  id                 String        @id @default(cuid())
+  storeId            String
+  billingPeriodId    String        @unique
+  invoiceNumber      String        @unique
+  issueDate          DateTime      @default(now())
+  dueDate            DateTime
+  currency           String        @default("BDT")
+  subscriptionAmount Decimal       @db.Decimal(12, 2)
+  platformFeeAmount  Decimal       @db.Decimal(12, 2)
+  adjustmentAmount   Decimal       @db.Decimal(12, 2) @default(0)
+  totalAmount        Decimal       @db.Decimal(12, 2)
+  amountPaid         Decimal       @db.Decimal(12, 2) @default(0)
+  creditApplied      Decimal       @db.Decimal(12, 2) @default(0)
+  status             InvoiceStatus @default(ISSUED)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  store         Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  billingPeriod BillingPeriod     @relation(fields: [billingPeriodId], references: [id], onDelete: Restrict)
+  payments      MerchantPayment[]
+
+  @@index([storeId, status])
+  @@index([storeId, issueDate])
+  @@index([status, dueDate])
+  @@map("invoices")
+}
+
+/**
+ * A merchant's claim of having paid an invoice — manual bKash or bank
+ * transfer in V1, verified by a human (Master Admin), not an automated
+ * gateway. Structurally independent from Order/its bkash* fields (see the
+ * module comment above) so a real payment gateway can be added later by
+ * adding a new `method` value and a webhook that writes through the same
+ * verification code path, not by rebuilding this model.
+ *
+ * `referenceId` (the bKash txn ID / bank reference the merchant provides)
+ * has a database-level uniqueness guarantee against duplicate submission —
+ * see the hand-added partial unique index in this model's migration,
+ * scoped to non-terminal statuses so a legitimately-corrected resubmission
+ * after a REJECTED/CANCELLED claim is never permanently blocked.
+ */
+model MerchantPayment {
+  id              String                @id @default(cuid())
+  storeId         String
+  invoiceId       String
+  method          MerchantPaymentMethod
+  amount          Decimal               @db.Decimal(12, 2)
+  currency        String                @default("BDT")
+  referenceId     String
+  transferDate    DateTime
+  note            String?               @db.Text
+  status          MerchantPaymentStatus @default(PENDING_VERIFICATION)
+  submittedAt     DateTime              @default(now())
+  verifiedAt      DateTime?
+  verifiedById    String?
+  rejectionReason String?               @db.Text
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  store      Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  verifiedBy User?   @relation("MerchantPaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, status])
+  @@index([invoiceId])
+  @@index([status, submittedAt])
+  @@map("merchant_payments")
 }
 
 // ---------------------------------------------------------------------------

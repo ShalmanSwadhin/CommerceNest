@@ -11,7 +11,7 @@ import { emitAfterCommit } from '../events/emit.js';
 import { createInviteToken } from './auth.service.js';
 import { writeAuditLog } from './audit.service.js';
 import { env } from '../lib/env.js';
-import { assertWithinStaffLimit } from './subscription.service.js';
+import { assertWithinStaffLimitTx, withStoreLock } from './subscription.service.js';
 
 const inviteSchema = z
   .object({
@@ -73,37 +73,42 @@ export async function inviteStoreStaff(
   },
 ) {
   const data = inviteSchema.parse(input);
-
-  await assertWithinStaffLimit(storeId);
-
-  const existing = await prisma.user.findUnique({
-    where: { email: data.email },
-  });
-  if (existing) {
-    throw AppError.conflict('Email already registered');
-  }
-
   const invite = await createInviteToken();
-  const user = await prisma.user.create({
-    data: {
-      email: data.email,
-      name: data.name,
-      phone: data.phone,
-      role: data.role,
-      status: UserStatus.INVITED,
-      storeId,
-      inviteTokenHash: invite.hash,
-      inviteExpiresAt: invite.expiresAt,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      phone: true,
-      role: true,
-      status: true,
-      storeId: true,
-    },
+
+  // Locked (see withStoreLock) so two concurrent invites for the same store
+  // can't both pass the same stale staff count and both succeed past the
+  // limit.
+  const user = await withStoreLock(storeId, async (tx) => {
+    await assertWithinStaffLimitTx(tx, storeId);
+
+    const existing = await tx.user.findUnique({
+      where: { email: data.email },
+    });
+    if (existing) {
+      throw AppError.conflict('Email already registered');
+    }
+
+    return tx.user.create({
+      data: {
+        email: data.email,
+        name: data.name,
+        phone: data.phone,
+        role: data.role,
+        status: UserStatus.INVITED,
+        storeId,
+        inviteTokenHash: invite.hash,
+        inviteExpiresAt: invite.expiresAt,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        role: true,
+        status: true,
+        storeId: true,
+      },
+    });
   });
 
   await writeAuditLog({

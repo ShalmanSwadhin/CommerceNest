@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { env, hasCloudinary } from '../lib/env.js';
-import { assertWithinStorageLimit } from './subscription.service.js';
+import { assertWithinStorageLimitTx, withStoreLock } from './subscription.service.js';
 
 /**
  * This system is for images only — anything else (HTML, scripts, archives)
@@ -157,20 +157,124 @@ const registerMediaSchema = z
   })
   .strict();
 
+/**
+ * Cloudinary is the authoritative source for how large an uploaded file
+ * actually is — the client-supplied `bytes` in registerMediaAsset can't be
+ * fully trusted (a merchant's client could under-report it to dodge the
+ * storage limit). One Admin API lookup made at registration time, not on
+ * every read — storage totals are always summed from the already-stored
+ * `MediaAsset.bytes` column, so this never runs on a dashboard/list
+ * request. Returns `null` on any failure (network error, not found yet due
+ * to upload propagation delay, non-2xx, malformed response) — the caller
+ * decides what a failed verification means (see `resolveStorageVerificationMode`).
+ */
+async function fetchVerifiedCloudinaryBytes(publicId: string): Promise<number | null> {
+  const url = `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload/${encodeURIComponent(publicId)}`;
+  const basicAuth = Buffer.from(`${env.CLOUDINARY_API_KEY}:${env.CLOUDINARY_API_SECRET}`).toString('base64');
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Basic ${basicAuth}` } });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  try {
+    const json = (await res.json()) as { bytes?: unknown };
+    return typeof json.bytes === 'number' && Number.isFinite(json.bytes) ? json.bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+export type StorageVerificationMode = 'real' | 'stub' | 'unconfigured-production';
+
+/** Pure — no DB, no network, no env mutation — same shape and same reason as
+ * `lib/sms.ts#resolveSmsMode`, which this deliberately mirrors: configured
+ * means "actually verify," unconfigured-in-production means "fail closed,
+ * never silently trust the client," unconfigured-in-dev/test means "no real
+ * Cloudinary asset exists to check anyway, use the (bounded) client value."
+ * Takes explicit params (rather than reading `hasCloudinary`/`env.NODE_ENV`
+ * internally) so the decision itself is testable without mocking env or
+ * network state — see product-staff-concurrency.test.ts. */
+export function resolveStorageVerificationMode(opts: {
+  nodeEnv: string;
+  cloudinaryConfigured: boolean;
+}): StorageVerificationMode {
+  if (opts.cloudinaryConfigured) return 'real';
+  if (opts.nodeEnv === 'production') return 'unconfigured-production';
+  return 'stub';
+}
+
+/**
+ * Resolves the byte count to trust for this upload — the network call to
+ * Cloudinary (when applicable) happens here, entirely before any database
+ * transaction/lock is opened (see registerMediaAsset below). Throws
+ * STORAGE_VERIFICATION_UNAVAILABLE (503) rather than silently trusting an
+ * unverifiable client-supplied number whenever verification *should* have
+ * been possible but wasn't — production-without-Cloudinary, or a real
+ * Cloudinary lookup that failed.
+ */
+async function resolveVerifiedBytes(input: { publicId: string; bytes: number }): Promise<number> {
+  const mode = resolveStorageVerificationMode({
+    nodeEnv: env.NODE_ENV,
+    cloudinaryConfigured: hasCloudinary,
+  });
+
+  if (mode === 'unconfigured-production') {
+    throw AppError.serviceUnavailable(
+      'Storage verification is not available right now. Please try again shortly.',
+      'STORAGE_VERIFICATION_UNAVAILABLE',
+    );
+  }
+
+  if (mode === 'stub') {
+    // Dev/test only (see resolveStorageVerificationMode) — there is no real
+    // Cloudinary asset to verify against, so the client-supplied value
+    // (already bounded by MAX_MEDIA_BYTES) is the best available number,
+    // matching this codebase's existing dev-safe-stub convention.
+    return input.bytes;
+  }
+
+  const verified = await fetchVerifiedCloudinaryBytes(input.publicId);
+  if (verified === null) {
+    throw AppError.serviceUnavailable(
+      'Could not verify the uploaded file size. Please try again.',
+      'STORAGE_VERIFICATION_UNAVAILABLE',
+    );
+  }
+  return verified;
+}
+
+/**
+ * Registration flow, deliberately in this order to avoid holding a database
+ * lock across a network call:
+ *   1. Resolve the trusted byte count (Cloudinary lookup or dev stub) — no
+ *      transaction open yet.
+ *   2. Open a short transaction, lock the store row, re-check current
+ *      storage usage against the plan limit, create the MediaAsset, commit.
+ * Step 2's re-check (not just step 1's number) is what makes concurrent
+ * uploads safe: two simultaneous registrations for the same store are
+ * serialized by the row lock, so the second one sees the first's already-
+ * committed usage before deciding whether it still fits.
+ */
 export async function registerMediaAsset(storeId: string, rawInput: unknown) {
   const input = registerMediaSchema.parse(rawInput);
+  const bytes = await resolveVerifiedBytes(input);
 
-  await assertWithinStorageLimit(storeId, input.bytes);
-
-  return prisma.mediaAsset.create({
-    data: {
-      storeId,
-      publicId: input.publicId,
-      url: input.url,
-      filename: input.filename,
-      mimeType: input.mimeType,
-      bytes: input.bytes,
-      usageType: input.usageType ?? 'OTHER',
-    },
+  return withStoreLock(storeId, async (tx) => {
+    await assertWithinStorageLimitTx(tx, storeId, bytes);
+    return tx.mediaAsset.create({
+      data: {
+        storeId,
+        publicId: input.publicId,
+        url: input.url,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        bytes,
+        usageType: input.usageType ?? 'OTHER',
+      },
+    });
   });
 }

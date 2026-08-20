@@ -231,6 +231,32 @@ export const BillingEntryType = {
 export type BillingEntryType =
   (typeof BillingEntryType)[keyof typeof BillingEntryType];
 
+export const InvoiceStatus = {
+  DRAFT: 'DRAFT',
+  ISSUED: 'ISSUED',
+  PARTIALLY_PAID: 'PARTIALLY_PAID',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+  VOID: 'VOID',
+} as const;
+export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
+
+export const MerchantPaymentMethod = {
+  MANUAL_BKASH: 'MANUAL_BKASH',
+  MANUAL_BANK_TRANSFER: 'MANUAL_BANK_TRANSFER',
+} as const;
+export type MerchantPaymentMethod =
+  (typeof MerchantPaymentMethod)[keyof typeof MerchantPaymentMethod];
+
+export const MerchantPaymentStatus = {
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type MerchantPaymentStatus =
+  (typeof MerchantPaymentStatus)[keyof typeof MerchantPaymentStatus];
+
 /** Bangladesh mobile number: 01[3-9] followed by 8 digits (11 total). */
 export const BANGLADESH_PHONE_REGEX = /^01[3-9]\d{8}$/;
 

@@ -1,11 +1,39 @@
-import type { Prisma } from '@commercenest/prisma';
+import { Prisma } from '@commercenest/prisma';
 import { BillingEntryType, BillingPeriodStatus } from '@commercenest/types';
 import { prisma, isUniqueConstraintError } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 import { limitsFor } from './subscription.service.js';
 import { toNumber } from './order.service.js';
 
-type Db = Prisma.TransactionClient | typeof prisma;
+export type Db = Prisma.TransactionClient | typeof prisma;
+export type Decimal = Prisma.Decimal;
+
+const ZERO = new Prisma.Decimal(0);
+
+/** Converts any Decimal-ish value (a Prisma.Decimal instance already, or a
+ * DB-returned string/number) into a Prisma.Decimal — the same decimal.js
+ * class Prisma itself uses for `Decimal` columns, already a dependency of
+ * this project, so no new package was added for this. Every billing
+ * calculation (fee, adjustment, ratio) is done in this exact decimal space,
+ * never in plain JS `number`, and only converted to `number` at the very
+ * end for read-only API/JSON display — never as an input to further math. */
+export function toDecimal(value: unknown): Decimal {
+  if (value instanceof Prisma.Decimal) return value;
+  return new Prisma.Decimal(value as Prisma.Decimal.Value);
+}
+
+/**
+ * Every CommerceNest currency used today (BDT) has 2 fractional digits
+ * (paisa). Money is rounded to exactly 2 decimal places using round-half-up
+ * (e.g. 10.005 → 10.01) — the standard financial rounding rule, and
+ * deliberately not JS's native float `toFixed`, which mis-rounds cases like
+ * this exact one because 10.005 isn't exactly representable as a binary
+ * float. Rounding happens exactly once, at the point each ledger-entry
+ * amount is computed; nothing downstream re-rounds an already-rounded value.
+ */
+export function roundMoney(value: Decimal): Decimal {
+  return value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+}
 
 // ---------------------------------------------------------------------------
 // Billing periods — one calendar-month window per store. Pricing fields are
@@ -35,9 +63,12 @@ export async function getOrCreateCurrentBillingPeriod(storeId: string, db: Db = 
   });
   if (existing) return existing;
 
-  const store = await db.store.findUnique({ where: { id: storeId }, select: { planTier: true } });
+  const store = await db.store.findUnique({
+    where: { id: storeId },
+    select: { planTier: true, isTrial: true },
+  });
   if (!store) throw AppError.notFound('Store not found');
-  const plan = await limitsFor(store.planTier);
+  const plan = await limitsFor(store.planTier, db);
   const pkg = await db.package.findUnique({ where: { slug: store.planTier } });
 
   // Close out any still-OPEN period whose window has already ended — this
@@ -48,22 +79,48 @@ export async function getOrCreateCurrentBillingPeriod(storeId: string, db: Db = 
     data: { status: BillingPeriodStatus.CLOSED },
   });
 
-  const period = await db.billingPeriod.create({
-    data: {
-      storeId,
-      periodStart: start,
-      periodEnd: end,
-      status: BillingPeriodStatus.OPEN,
-      planSlug: plan.planTier,
-      planName: plan.planName,
-      subscriptionPrice: pkg ? pkg.monthlyPrice : 0,
-      platformFeeRate: plan.platformFeeRate,
-      currency: pkg?.currency ?? 'BDT',
-    },
-  });
+  // A store on an active trial (isTrial) is not a paying customer yet — it
+  // must never accrue a real subscription charge or platform fee. planSlug/
+  // planName still reflect the plan they're trialing (informative), but the
+  // monetary fields are zeroed, which also makes bookPlatformFeeForOrder's
+  // existing feeAmount.lte(0) guard naturally skip booking anything for
+  // trial-period orders too — no separate trial check needed there. Once
+  // convertTrial flips isTrial to false, the NEXT period picks up real
+  // pricing; the already-open trial period is never retroactively charged,
+  // consistent with how a Package price change never retroactively affects
+  // an already-open period either.
+  const openingSubscriptionPrice = store.isTrial ? 0 : pkg ? pkg.monthlyPrice : 0;
+  const openingPlatformFeeRate = store.isTrial ? 0 : plan.platformFeeRate;
 
-  const subscriptionPrice = toNumber(period.subscriptionPrice);
-  if (subscriptionPrice > 0) {
+  let period;
+  try {
+    period = await db.billingPeriod.create({
+      data: {
+        storeId,
+        periodStart: start,
+        periodEnd: end,
+        status: BillingPeriodStatus.OPEN,
+        planSlug: plan.planTier,
+        planName: plan.planName,
+        subscriptionPrice: openingSubscriptionPrice,
+        platformFeeRate: openingPlatformFeeRate,
+        currency: pkg?.currency ?? 'BDT',
+      },
+    });
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      // Lost the race to another concurrent caller opening the same
+      // (storeId, periodStart) period — theirs already exists (and already
+      // booked its own SUBSCRIPTION_CHARGE), so just return it.
+      return db.billingPeriod.findUniqueOrThrow({
+        where: { storeId_periodStart: { storeId, periodStart: start } },
+      });
+    }
+    throw err;
+  }
+
+  const subscriptionPrice = toDecimal(period.subscriptionPrice);
+  if (subscriptionPrice.gt(0)) {
     await createLedgerEntry(db, {
       storeId,
       billingPeriodId: period.id,
@@ -92,7 +149,7 @@ async function createLedgerEntry(
     storeId: string;
     billingPeriodId: string | null;
     type: string;
-    amount: number;
+    amount: Decimal;
     currency: string;
     description: string;
     referenceType: string;
@@ -133,9 +190,9 @@ async function createLedgerEntry(
 export function eligibleOrderValue(order: {
   subtotal: unknown;
   discountAmount: unknown;
-}): number {
-  const value = toNumber(order.subtotal as never) - toNumber(order.discountAmount as never);
-  return Math.max(0, value);
+}): Decimal {
+  const value = toDecimal(order.subtotal).minus(toDecimal(order.discountAmount));
+  return value.isNegative() ? ZERO : value;
 }
 
 /**
@@ -153,8 +210,9 @@ export async function bookPlatformFeeForOrder(
 ) {
   const period = await getOrCreateCurrentBillingPeriod(order.storeId, db);
   const eligible = eligibleOrderValue(order);
-  const feeAmount = round2(eligible * toNumber(period.platformFeeRate));
-  if (feeAmount <= 0) return;
+  const feeRate = toDecimal(period.platformFeeRate);
+  const feeAmount = roundMoney(eligible.mul(feeRate));
+  if (feeAmount.lte(0)) return;
 
   const booked = await createLedgerEntry(db, {
     storeId: order.storeId,
@@ -162,16 +220,18 @@ export async function bookPlatformFeeForOrder(
     type: BillingEntryType.PLATFORM_FEE,
     amount: feeAmount,
     currency: period.currency,
-    description: `Platform fee (${(toNumber(period.platformFeeRate) * 100).toFixed(2)}%) — order ${order.id}`,
+    description: `Platform fee (${feeRate.mul(100).toFixed(2)}%) — order ${order.id}`,
     referenceType: 'Order',
     referenceId: order.id,
-    metadata: { eligibleOrderValue: eligible, feeRate: toNumber(period.platformFeeRate) },
+    metadata: { eligibleOrderValue: eligible.toFixed(2), feeRate: feeRate.toFixed(4) },
   });
   if (!booked) return;
 
   await db.billingPeriod.update({
     where: { id: period.id },
     data: {
+      // eligibleGmv is gross — it is never reduced by a later refund. See
+      // BILLING_ARCHITECTURE.md "Eligible GMV is gross, not net-of-refund".
       eligibleGmv: { increment: eligible },
       platformFeeAmount: { increment: feeAmount },
     },
@@ -194,31 +254,146 @@ export async function bookRefundAdjustment(
   });
   if (!originalFee) return; // no fee was ever booked for this order — nothing to reverse
 
-  const ratio = params.orderTotal > 0 ? Math.min(1, params.refundAmount / params.orderTotal) : 0;
-  const adjustment = round2(toNumber(originalFee.amount) * ratio);
-  if (adjustment <= 0) return;
+  const refundAmount = toDecimal(params.refundAmount);
+  const orderTotal = toDecimal(params.orderTotal);
+  const ratio = orderTotal.gt(0) ? Prisma.Decimal.min(refundAmount.div(orderTotal), 1) : ZERO;
+  const adjustment = roundMoney(toDecimal(originalFee.amount).mul(ratio));
+  if (adjustment.lte(0)) return;
 
   const booked = await createLedgerEntry(db, {
     storeId: params.storeId,
     billingPeriodId: originalFee.billingPeriodId,
     type: BillingEntryType.ADJUSTMENT,
-    amount: -adjustment,
+    amount: adjustment.negated(),
     currency: originalFee.currency,
     description: `Platform fee refund adjustment — return ${params.returnRequestId}`,
     referenceType: 'ReturnRequest',
     referenceId: params.returnRequestId,
-    metadata: { refundAmount: params.refundAmount, orderTotal: params.orderTotal, ratio },
+    metadata: { refundAmount: params.refundAmount, orderTotal: params.orderTotal, ratio: ratio.toFixed(4) },
   });
-  if (!booked || !originalFee.billingPeriodId) return;
+  if (!booked || !originalFee.billingPeriodId) return null;
 
+  // Deliberately writes to originalFee.billingPeriodId regardless of that
+  // period's current status — a refund correctly adjusts the period the
+  // original fee was earned in, even if that period has since closed. See
+  // BILLING_ARCHITECTURE.md "Closed periods can still receive adjustments".
   await db.billingPeriod.update({
     where: { id: originalFee.billingPeriodId },
     data: { platformFeeAmount: { decrement: adjustment } },
   });
+
+  // Reported back to the caller (return.service.ts) so invoice.service.ts
+  // can react if that period has already been invoiced — billing.service.ts
+  // itself stays entirely unaware of Invoice, keeping the dependency
+  // one-directional (invoice.service.ts depends on this file, never the
+  // reverse). See MERCHANT_PAYMENT_ARCHITECTURE_PROPOSAL.md.
+  return { billingPeriodId: originalFee.billingPeriodId, adjustmentAmount: adjustment };
 }
 
-function round2(n: number) {
-  return Math.round(n * 100) / 100;
+// ---------------------------------------------------------------------------
+// Merchant credit — represented as signed BillingLedgerEntry rows of type
+// CREDIT rather than a separate table: positive when credit is issued
+// (overpayment, a refund arriving after its invoice was already paid),
+// negative when consumed (applied against a later invoice). A store's
+// available balance is simply the sum. This reuses the existing ledger's
+// idempotency/append-only/tenant-scoping guarantees instead of building a
+// second, parallel financial-events table. See BILLING_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+/** Idempotent — a duplicate call for the same (referenceType, referenceId)
+ * is a no-op, exactly like fee/adjustment booking. */
+export async function issueCredit(
+  db: Db,
+  params: {
+    storeId: string;
+    amount: Decimal;
+    currency?: string;
+    referenceType: string;
+    referenceId: string;
+    description: string;
+    metadata?: Prisma.InputJsonValue;
+  },
+): Promise<boolean> {
+  if (params.amount.lte(0)) return false;
+  return createLedgerEntry(db, {
+    storeId: params.storeId,
+    billingPeriodId: null,
+    type: BillingEntryType.CREDIT,
+    amount: params.amount,
+    currency: params.currency ?? 'BDT',
+    description: params.description,
+    referenceType: params.referenceType,
+    referenceId: params.referenceId,
+    metadata: params.metadata,
+  });
+}
+
+/** Idempotent — a duplicate call for the same (referenceType, referenceId)
+ * is a no-op. `referenceType`/`referenceId` should identify what consumed
+ * the credit (typically `'Invoice'` + the invoice's id), so at most one
+ * consumption entry can ever exist per invoice. */
+export async function consumeCredit(
+  db: Db,
+  params: {
+    storeId: string;
+    amount: Decimal;
+    currency?: string;
+    referenceType: string;
+    referenceId: string;
+    description: string;
+  },
+): Promise<boolean> {
+  if (params.amount.lte(0)) return false;
+  return createLedgerEntry(db, {
+    storeId: params.storeId,
+    billingPeriodId: null,
+    type: BillingEntryType.CREDIT,
+    amount: params.amount.negated(),
+    currency: params.currency ?? 'BDT',
+    description: params.description,
+    referenceType: params.referenceType,
+    referenceId: params.referenceId,
+  });
+}
+
+/** Current available balance — the sum of every CREDIT entry (issuances
+ * positive, consumptions negative) for the store. Never cached; this is a
+ * single indexed aggregate, cheap enough to compute live on every read. */
+export async function getAvailableCredit(db: Db, storeId: string): Promise<Decimal> {
+  const agg = await db.billingLedgerEntry.aggregate({
+    where: { storeId, type: BillingEntryType.CREDIT },
+    _sum: { amount: true },
+  });
+  return toDecimal(agg._sum.amount ?? 0);
+}
+
+/** Books a PAYMENT ledger entry for a verified merchant payment. Idempotent
+ * via the same (storeId, referenceType, referenceId, type) uniqueness as
+ * every other ledger entry — a duplicate verification attempt for the same
+ * payment is a silent no-op, never a second entry. billing.service.ts stays
+ * unaware of MerchantPayment/Invoice; the caller (merchant-payment.service.ts)
+ * only needs to hand this a storeId, amount, and a reference id. */
+export async function bookMerchantPaymentReceived(
+  db: Db,
+  params: {
+    storeId: string;
+    amount: Decimal;
+    currency?: string;
+    referenceId: string;
+    description: string;
+  },
+): Promise<boolean> {
+  if (params.amount.lte(0)) return false;
+  return createLedgerEntry(db, {
+    storeId: params.storeId,
+    billingPeriodId: null,
+    type: BillingEntryType.PAYMENT,
+    amount: params.amount,
+    currency: params.currency ?? 'BDT',
+    description: params.description,
+    referenceType: 'MerchantPayment',
+    referenceId: params.referenceId,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +440,10 @@ export async function getBillingPeriodDetail(storeId: string, periodId: string) 
   return { period: serializePeriod(period), entries: entries.map(serializeEntry) };
 }
 
+/** Display-only conversion to plain JS numbers for JSON API responses — the
+ * values here are already-rounded, final ledger amounts, never inputs to
+ * further calculation, so this is not subject to the same precision
+ * concerns as the arithmetic above. */
 function serializePeriod(period: {
   id: string;
   storeId: string;
@@ -279,8 +458,8 @@ function serializePeriod(period: {
   eligibleGmv: unknown;
   platformFeeAmount: unknown;
 }) {
-  const subscriptionPrice = toNumber(period.subscriptionPrice as never);
-  const platformFeeAmount = toNumber(period.platformFeeAmount as never);
+  const subscriptionPrice = toDecimal(period.subscriptionPrice);
+  const platformFeeAmount = toDecimal(period.platformFeeAmount);
   return {
     id: period.id,
     storeId: period.storeId,
@@ -289,12 +468,12 @@ function serializePeriod(period: {
     status: period.status,
     planSlug: period.planSlug,
     planName: period.planName,
-    subscriptionPrice,
+    subscriptionPrice: subscriptionPrice.toNumber(),
     platformFeeRate: toNumber(period.platformFeeRate as never),
     currency: period.currency,
     eligibleGmv: toNumber(period.eligibleGmv as never),
-    platformFeeAmount,
-    totalDue: round2(subscriptionPrice + platformFeeAmount),
+    platformFeeAmount: platformFeeAmount.toNumber(),
+    totalDue: subscriptionPrice.plus(platformFeeAmount).toNumber(),
   };
 }
 
