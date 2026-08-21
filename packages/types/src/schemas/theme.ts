@@ -119,7 +119,24 @@ export const themeBrandingSchema = z.object({
   tagline: z.string().default(''),
 });
 
+/**
+ * Selects which storefront component tree renders this store — NOT a
+ * styling choice like the tokens below. 'default' is the shared, generic
+ * renderer every existing store/preset uses today and keeps using
+ * unconditionally (this field defaulting to 'default' is exactly what makes
+ * this change zero-risk for every theme that predates it). 'modern-commerce'
+ * switches the storefront (see apps/storefront/src/themes/modern-commerce/)
+ * to a purpose-built component tree matching that design's actual layout,
+ * chrome (header/footer/cart drawer/search overlay/mobile nav), and product
+ * card — not the generic one with different tokens plugged in. Both trees
+ * read the exact same `layout.sections`/other themeSettings tokens and the
+ * same real store/product/cart/checkout data; only the JSX differs.
+ */
+export const themeTemplateIdSchema = z.enum(['default', 'modern-commerce']);
+export type ThemeTemplateId = z.infer<typeof themeTemplateIdSchema>;
+
 export const themeSettingsSchema = z.object({
+  templateId: themeTemplateIdSchema.default('default'),
   branding: themeBrandingSchema.default({}),
   colors: themeColorsSchema.default({}),
   typography: themeTypographySchema.default({}),
@@ -201,6 +218,11 @@ export const DEFAULT_SECTION_DEFS: {
       columns: 4,
       showViewAll: true,
       source: 'latest',
+      // 'carousel' is only honored by the modern-commerce renderer (a
+      // horizontally-scrolling, snap-scrolling row) — the default renderer
+      // always renders a static grid regardless of this value, so existing
+      // themes are unaffected by its mere presence in the schema.
+      displayStyle: 'grid',
     },
   },
   {
@@ -217,6 +239,9 @@ export const DEFAULT_SECTION_DEFS: {
       overlayType: 'none',
       overlayColor: '#0B1023',
       overlay: 40,
+      // ISO datetime string; empty = no countdown. Only rendered by the
+      // modern-commerce renderer — the default renderer ignores it entirely.
+      countdownEndsAt: '',
     },
   },
   {
@@ -229,6 +254,7 @@ export const DEFAULT_SECTION_DEFS: {
       columns: 4,
       showViewAll: true,
       source: 'latest',
+      displayStyle: 'grid',
     },
   },
   {
@@ -436,6 +462,16 @@ export function normalizeThemeDocument(input: {
     (rawSettings.secondaryColor as string) ||
     (rawSettings.accentColor as string) ||
     '#F59E0B';
+  // Same guard pattern as header.style/logoSize/typography.preset below: an
+  // unrecognized value (garbage, or a future templateId this build doesn't
+  // know yet) must degrade to 'default' rather than blowing up the whole
+  // .parse() call — this is a routing field, not just a style token, so a
+  // throw here would crash the entire storefront render, not just one field.
+  const resolvedTemplateId = (['default', 'modern-commerce'] as const).includes(
+    rawSettings.templateId as 'default',
+  )
+    ? (rawSettings.templateId as 'default' | 'modern-commerce')
+    : 'default';
   const resolvedTypographyPreset = (
     ['modern', 'elegant', 'minimal', 'bold', 'classic'] as const
   ).includes(nestedType?.preset as 'modern')
@@ -456,6 +492,7 @@ export function normalizeThemeDocument(input: {
 
   const themeSettings = themeSettingsSchema.parse({
     ...rawSettings,
+    templateId: resolvedTemplateId,
     branding: {
       logoUrl: nestedBrand?.logoUrl ?? rawSettings.logoUrl ?? '',
       faviconUrl: nestedBrand?.faviconUrl ?? rawSettings.faviconUrl ?? '',

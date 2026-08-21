@@ -20,6 +20,9 @@ jobs:
       - run: npm run typecheck -w @commercenest/api
       - run: npm run test -w @commercenest/api
       - run: npm run build -w @commercenest/api
+      - run: npm run test -w @commercenest/admin-panel
       - run: npm run build -w @commercenest/admin-panel
       - run: npm run build -w @commercenest/store-dashboard
+      - run: npm run test -w @commercenest/storefront
       - run: npm run build -w @commercenest/storefront
+      - run: npm run build -w @commercenest/marketing

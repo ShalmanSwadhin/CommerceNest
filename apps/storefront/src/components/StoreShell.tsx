@@ -12,6 +12,7 @@ import { t } from '../i18n/dictionary';
 import { useCartStore } from '../stores/cartStore';
 import { useLocaleStore } from '../stores/localeStore';
 import { ErrorState } from './QueryState';
+import { ModernCommerceShell } from '../themes/modern-commerce/ModernCommerceShell';
 
 export function StoreShell() {
   const { slug, resolving, notFound } = useStoreSlug();
@@ -157,6 +158,12 @@ export function StoreShell() {
 
   const outletTheme = {
     ...flatTheme,
+    // Explicit override, not just the raw spread above: templateId is a
+    // routing decision, so every reader (ProductCard/CategoryPage/
+    // ProductPage via useOutletContext) must see the SAME validated value
+    // StoreShell itself already gated on below — never the unvalidated raw
+    // one flatTheme could otherwise carry.
+    templateId: doc.themeSettings.templateId,
     primaryColor: primary,
     secondaryColor: colors.secondary,
     fontFamily,
@@ -166,42 +173,58 @@ export function StoreShell() {
     footerText: footer.copyrightText || flatTheme.footerText,
   };
 
+  const cssVarStyle = {
+    ['--store-primary' as string]: primary,
+    ['--store-secondary' as string]: colors.secondary,
+    ['--store-accent' as string]: colors.accent,
+    ['--store-bg' as string]: colors.background,
+    ['--store-surface' as string]: colors.surface,
+    ['--store-text' as string]: colors.text,
+    ['--store-muted' as string]: colors.mutedText,
+    ['--store-border' as string]: colors.border,
+    ['--store-radius' as string]: `${radius}px`,
+    ['--store-shadow' as string]: designSystem.shadowCss,
+    ['--store-button-style' as string]: designSystem.buttonStyle,
+    ['--store-font' as string]: fontFamily,
+    ['--store-heading-font' as string]: headingFontFamily,
+    ['--store-heading-weight' as string]: headingWeight,
+    ['--store-body-weight' as string]: bodyWeight,
+    background: colors.background || '#f7f8fb',
+    color: colors.text || '#111827',
+    fontFamily: 'var(--store-font)',
+    fontWeight: 'var(--store-body-weight)',
+  };
+  const helmet = (
+    <Helmet>
+      <title>{store?.name ? `${store.name} · CommerceNest` : 'CommerceNest Storefront'}</title>
+      {store?.tagline ? <meta name="description" content={store.tagline} /> : null}
+      {faviconUrl ? <link rel="icon" href={String(faviconUrl)} /> : null}
+    </Helmet>
+  );
+
+  // A store's theme document picks the rendering tree, not just tokens —
+  // 'default' (the branch below, unchanged) is what every existing store
+  // and preset uses; only a store whose published theme explicitly sets
+  // templateId: 'modern-commerce' gets the purpose-built component tree in
+  // themes/modern-commerce/, so this is zero-risk for every other theme.
+  if (doc.themeSettings.templateId === 'modern-commerce') {
+    return (
+      <div className="min-h-screen" style={cssVarStyle}>
+        {helmet}
+        <ModernCommerceShell store={store} theme={{ announcement, logoUrl: String(logoUrl || '') }} outletTheme={outletTheme} />
+      </div>
+    );
+  }
+
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        ['--store-primary' as string]: primary,
-        ['--store-secondary' as string]: colors.secondary,
-        ['--store-accent' as string]: colors.accent,
-        ['--store-bg' as string]: colors.background,
-        ['--store-surface' as string]: colors.surface,
-        ['--store-text' as string]: colors.text,
-        ['--store-muted' as string]: colors.mutedText,
-        ['--store-border' as string]: colors.border,
-        ['--store-radius' as string]: `${radius}px`,
-        ['--store-shadow' as string]: designSystem.shadowCss,
-        ['--store-button-style' as string]: designSystem.buttonStyle,
-        ['--store-font' as string]: fontFamily,
-        ['--store-heading-font' as string]: headingFontFamily,
-        ['--store-heading-weight' as string]: headingWeight,
-        ['--store-body-weight' as string]: bodyWeight,
-        background: colors.background || '#f7f8fb',
-        color: colors.text || '#111827',
-        fontFamily: 'var(--store-font)',
-        fontWeight: 'var(--store-body-weight)',
-      }}
-    >
+    <div className="min-h-screen" style={cssVarStyle}>
       <style>{`
         h1, h2, h3 {
           font-family: var(--store-heading-font) !important;
           font-weight: var(--store-heading-weight) !important;
         }
       `}</style>
-      <Helmet>
-        <title>{store?.name ? `${store.name} · CommerceNest` : 'CommerceNest Storefront'}</title>
-        {store?.tagline ? <meta name="description" content={store.tagline} /> : null}
-        {faviconUrl ? <link rel="icon" href={String(faviconUrl)} /> : null}
-      </Helmet>
+      {helmet}
       {announcement ? (
         <div className="bg-[var(--store-primary)] px-4 py-2 text-center text-sm text-white">
           {String(announcement)}

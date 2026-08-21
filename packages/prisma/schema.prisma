@@ -277,6 +277,7 @@ model User {
   trialLeadsReviewed       TrialLead[]            @relation("TrialLeadReviewer")
   domainRequestsReviewed   DomainRequest[]        @relation("DomainRequestReviewer")
   merchantPaymentsVerified MerchantPayment[]      @relation("MerchantPaymentVerifier")
+  reviewsModerated         ProductReview[]        @relation("ReviewModerator")
 
   @@index([storeId])
   @@index([phone])
@@ -350,6 +351,10 @@ model Store {
   billingLedgerEntries BillingLedgerEntry[]
   invoices           Invoice[]
   merchantPayments   MerchantPayment[]
+  courierAccounts    CourierAccount[]
+  shipments          Shipment[]
+  productReviews     ProductReview[]
+  wishlistItems      WishlistItem[]
 
   @@index([status])
   @@index([ownerUserId])
@@ -465,6 +470,8 @@ model Customer {
   orders            Order[]
   couponRedemptions CouponRedemption[]
   returnRequests    ReturnRequest[]
+  reviews           ProductReview[]
+  wishlistItems     WishlistItem[]
 
   @@unique([storeId, phone])
   @@unique([storeId, email])
@@ -529,11 +536,22 @@ model Product {
   slug               String
   description        String?       @db.Text
   basePrice          Decimal       @db.Decimal(12, 2)
+  /// Optional "was" price shown struck through next to basePrice when set
+  /// and greater than the effective selling price. Purely a display/marketing
+  /// field — never affects checkout pricing, which always uses
+  /// basePrice/priceOverride (see order.service.ts).
+  compareAtPrice     Decimal?      @db.Decimal(12, 2)
   status             ProductStatus @default(DRAFT)
   images             Json          @default("[]")
   seoTitle           String?
   seoDescription     String?       @db.Text
   lowStockThreshold  Int           @default(5)
+  /// Denormalized from ProductReview (APPROVED only) — updated transactionally
+  /// whenever a review's status changes, same pattern as BillingPeriod's
+  /// running totals. Null (not 0) when reviewCount is 0, so the storefront can
+  /// tell "no reviews yet" apart from "reviewed, average is exactly zero".
+  ratingAverage      Decimal?      @db.Decimal(3, 2)
+  reviewCount        Int           @default(0)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -541,6 +559,8 @@ model Product {
   category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   variants Variant[]
   orderItems OrderItem[]
+  reviews      ProductReview[]
+  wishlistedBy WishlistItem[]
 
   @@unique([storeId, slug])
   @@index([storeId, status])
@@ -568,6 +588,64 @@ model Variant {
   @@index([storeId, productId])
   @@index([storeId, stock])
   @@map("variants")
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A customer-submitted product review — always tied to a real Order
+/// (verified purchase, not a free-text claim), always moderated before it
+/// affects Product.ratingAverage/reviewCount or becomes storefront-visible.
+model ProductReview {
+  id            String       @id @default(cuid())
+  storeId       String
+  productId     String
+  customerId    String
+  orderId       String
+  rating        Int
+  title         String?
+  comment       String?      @db.Text
+  status        ReviewStatus @default(PENDING)
+  moderatedById String?
+  moderatedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  moderatedBy User?    @relation("ReviewModerator", fields: [moderatedById], references: [id], onDelete: SetNull)
+
+  // One review per customer per product — resubmission means editing the
+  // existing row (service-layer upsert), not a growing pile of duplicates.
+  @@unique([storeId, productId, customerId])
+  @@index([storeId, productId, status])
+  @@index([storeId, status])
+  @@map("product_reviews")
+}
+
+/// A customer's saved-for-later product list. Deliberately minimal — no
+/// separate "wishlist" entity beyond the join row itself, matching
+/// CouponRedemption's shape (a plain per-customer-per-product marker, not a
+/// named/multi-list system).
+model WishlistItem {
+  id         String   @id @default(cuid())
+  storeId    String
+  customerId String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  store    Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId])
+  @@index([storeId, customerId])
+  @@map("wishlist_items")
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +691,8 @@ model Order {
   statusHistory       OrderStatusHistory[]
   couponRedemption    CouponRedemption?
   returnRequests      ReturnRequest[]
+  shipment            Shipment?
+  productReviews      ProductReview[]
 
   @@unique([storeId, orderNumber])
   @@index([storeId, status])
@@ -663,6 +743,102 @@ model OrderStatusHistory {
   @@index([orderId, createdAt])
   @@index([storeId, createdAt])
   @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// Courier integration — abstracted so a second provider is a new adapter,
+// not a schema change. `provider` is a plain validated string (like
+// Store.planTier / Package.slug), not an enum, specifically so adding a
+// second courier later is a config/code change, not a migration. See
+// services/courier/ for the provider boundary and COURIER_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+/** CommerceNest's own normalized delivery-status vocabulary — what every
+ * courier's raw status gets mapped INTO, so the rest of the app (and any
+ * future second courier) only ever deals with one vocabulary. The
+ * courier's raw string is preserved separately on Shipment.rawStatus, so
+ * nothing is lost in the normalization. */
+enum ShipmentStatus {
+  CREATED
+  IN_REVIEW
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  PARTIAL_DELIVERED
+  ON_HOLD
+  CANCELLED
+  RETURNED
+  FAILED
+}
+
+/**
+ * One row per (store, courier provider) — a merchant's own courier account
+ * credentials, entered once in Store Admin → Settings → Delivery. Never
+ * returned to any client with `credentialsEncrypted` decrypted; only the
+ * courier service layer (server-side only) ever decrypts it. See
+ * lib/crypto.ts for the encryption-at-rest scheme.
+ */
+model CourierAccount {
+  id                   String    @id @default(cuid())
+  storeId              String
+  provider             String
+  /** AES-256-GCM ciphertext of a provider-specific JSON credentials object
+   * (e.g. `{ apiKey, secretKey }` for Steadfast) — see lib/crypto.ts.
+   * Never selected into any API response; read only inside
+   * services/courier/*. */
+  credentialsEncrypted Json
+  enabled              Boolean   @default(false)
+  isDefault            Boolean   @default(false)
+  lastTestedAt         DateTime?
+  lastTestOk           Boolean?
+  lastTestMessage      String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, provider])
+  @@index([storeId, enabled])
+  @@map("courier_accounts")
+}
+
+/**
+ * One shipment per order (V1 — re-shipping after a cancelled consignment is
+ * a future enhancement, not built now). Created by an explicit Store Admin
+ * action ("Create shipment"), never automatically on order confirmation —
+ * calling a real courier API is a real-world action with real
+ * consequences, so it stays a deliberate step. `status` is CommerceNest's
+ * normalized vocabulary; `rawStatus`/`courierResponse` preserve the
+ * courier's own words for audit/debugging without ever being trusted as
+ * the source of truth for anything financial.
+ */
+model Shipment {
+  id               String         @id @default(cuid())
+  storeId          String
+  orderId          String         @unique
+  provider         String
+  consignmentId    String?
+  trackingCode     String?
+  status           ShipmentStatus @default(CREATED)
+  rawStatus        String?
+  codAmount        Decimal        @db.Decimal(12, 2)
+  deliveryCharge   Decimal?       @db.Decimal(12, 2)
+  recipientName    String
+  recipientPhone   String
+  recipientAddress String         @db.Text
+  note             String?        @db.Text
+  courierResponse  Json?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@index([provider, consignmentId])
+  @@index([provider, trackingCode])
+  @@map("shipments")
 }
 
 // ---------------------------------------------------------------------------

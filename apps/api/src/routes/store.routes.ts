@@ -29,6 +29,8 @@ import * as subscriptionService from '../services/subscription.service.js';
 import * as billingService from '../services/billing.service.js';
 import * as invoiceService from '../services/invoice.service.js';
 import * as merchantPaymentService from '../services/merchant-payment.service.js';
+import * as courierService from '../services/courier/courier.service.js';
+import * as reviewService from '../services/review.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -392,6 +394,35 @@ storeRouter.post(
   }),
 );
 
+// Product reviews (moderation)
+storeRouter.get(
+  '/reviews',
+  requireRoles(
+    UserRole.STORE_OWNER,
+    UserRole.STORE_MANAGER,
+    UserRole.CUSTOMER_SUPPORT,
+    UserRole.MASTER_ADMIN,
+  ),
+  asyncHandler(async (req, res) => {
+    res.json(await reviewService.listReviewsForModeration(scopedStoreId(req), req.query));
+  }),
+);
+
+storeRouter.patch(
+  '/reviews/:reviewId',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await reviewService.moderateReview(
+        scopedStoreId(req),
+        param(req, 'reviewId'),
+        req.body,
+        req.user!.id,
+      ),
+    );
+  }),
+);
+
 const ORDER_READ_ROLES = [
   UserRole.STORE_OWNER,
   UserRole.STORE_MANAGER,
@@ -477,6 +508,102 @@ storeRouter.patch(
         req.body ?? {},
       ),
     );
+  }),
+);
+
+const SHIPMENT_ROLES = [
+  UserRole.STORE_OWNER,
+  UserRole.STORE_MANAGER,
+  UserRole.ORDER_MANAGER,
+  UserRole.MASTER_ADMIN,
+] as const;
+
+storeRouter.get(
+  '/orders/:orderId/shipment',
+  requireRoles(...ORDER_READ_ROLES),
+  asyncHandler(async (req, res) => {
+    res.json(await courierService.getShipmentForOrder(scopedStoreId(req), param(req, 'orderId')));
+  }),
+);
+
+storeRouter.post(
+  '/orders/:orderId/shipment',
+  requireRoles(...SHIPMENT_ROLES),
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(
+        await courierService.createShipmentForOrder(scopedStoreId(req), param(req, 'orderId'), {
+          id: req.user!.id,
+        }),
+      );
+  }),
+);
+
+storeRouter.post(
+  '/orders/:orderId/shipment/sync',
+  requireRoles(...SHIPMENT_ROLES),
+  asyncHandler(async (req, res) => {
+    const shipment = await prisma.shipment.findFirst({
+      where: { orderId: param(req, 'orderId'), storeId: scopedStoreId(req) },
+      select: { id: true },
+    });
+    if (!shipment) throw AppError.notFound('Shipment not found');
+    res.json(
+      await courierService.syncShipmentStatus(scopedStoreId(req), shipment.id, { id: req.user!.id }),
+    );
+  }),
+);
+
+// --- Courier configuration (Settings → Delivery) ---
+storeRouter.get(
+  '/courier/providers',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (_req, res) => {
+    res.json({ items: courierService.listAvailableProviders() });
+  }),
+);
+
+storeRouter.get(
+  '/courier/accounts',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.json({ items: await courierService.listCourierAccounts(scopedStoreId(req)) });
+  }),
+);
+
+storeRouter.post(
+  '/courier/accounts',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await courierService.upsertCourierAccount(scopedStoreId(req), req.body));
+  }),
+);
+
+storeRouter.patch(
+  '/courier/accounts/:accountId',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    const enabled = z.boolean().parse(req.body?.enabled);
+    res.json(
+      await courierService.setCourierAccountEnabled(scopedStoreId(req), param(req, 'accountId'), enabled),
+    );
+  }),
+);
+
+storeRouter.delete(
+  '/courier/accounts/:accountId',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.json(await courierService.deleteCourierAccount(scopedStoreId(req), param(req, 'accountId')));
+  }),
+);
+
+storeRouter.post(
+  '/courier/accounts/:accountId/test',
+  requireRoles(UserRole.STORE_OWNER, UserRole.STORE_MANAGER, UserRole.MASTER_ADMIN),
+  asyncHandler(async (req, res) => {
+    res.json(await courierService.testCourierConnection(scopedStoreId(req), param(req, 'accountId')));
   }),
 );
 

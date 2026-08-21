@@ -22,6 +22,15 @@ const BUTTON_STYLE_PRESETS: { value: 'solid' | 'outline' | 'ghost'; label: strin
   { value: 'ghost', label: 'Ghost' },
 ];
 
+const TEMPLATE_PRESETS: { value: 'default' | 'modern-commerce'; label: string; description: string }[] = [
+  { value: 'default', label: 'Standard', description: 'The regular CommerceNest storefront — works with every section type and every merchant.' },
+  {
+    value: 'modern-commerce',
+    label: 'Modern Commerce',
+    description: 'A dedicated premium storefront experience — its own header, cart drawer, search overlay, and product cards. Best paired with the "Premium Modern" prebuilt layout.',
+  },
+];
+
 type DesignSystemPanelProps = {
   open: boolean;
   onClose: () => void;
@@ -54,6 +63,34 @@ export function DesignSystemPanel({ open, onClose, themeSettings, onPatch }: Des
       description="Global tokens that apply to every section at once — cards, banners, and buttons across the whole storefront."
     >
       <div className="space-y-5">
+        <div>
+          <p className="mb-2 text-sm font-semibold text-ink">Storefront template</p>
+          <p className="mb-2 text-xs text-ink-secondary">
+            Changes which set of components renders the storefront — not just colors. Switching back to
+            Standard is always safe; nothing about the merchant's products, orders, or other settings changes.
+          </p>
+          <div className="space-y-1.5">
+            {TEMPLATE_PRESETS.map((preset) => {
+              const active = (themeSettings.templateId || 'default') === preset.value;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => onPatch({ templateId: preset.value })}
+                  className={`w-full rounded-lg border px-3 py-2 text-left ${
+                    active ? 'border-primary bg-primary/10' : 'border-line hover:bg-surface-raised'
+                  }`}
+                >
+                  <span className={`block text-sm font-semibold ${active ? 'text-primary' : 'text-ink'}`}>
+                    {preset.label}
+                  </span>
+                  <span className="block text-xs text-ink-secondary">{preset.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div>
           <p className="mb-2 text-sm font-semibold text-ink">Corner radius</p>
           <div className="grid grid-cols-5 gap-1.5">

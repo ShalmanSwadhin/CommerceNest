@@ -15,6 +15,7 @@ import { ProductsPage } from './pages/ProductsPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { CouponsPage } from './pages/CouponsPage';
 import { ReturnsPage } from './pages/ReturnsPage';
+import { ReviewsPage } from './pages/ReviewsPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { BillingPage } from './pages/BillingPage';
@@ -210,6 +211,14 @@ export default function App() {
                     element={
                       <RequirePermission perm="returns">
                         <ReturnsPage />
+                      </RequirePermission>
+                    }
+                  />
+                  <Route
+                    path="reviews"
+                    element={
+                      <RequirePermission perm="reviews">
+                        <ReviewsPage />
                       </RequirePermission>
                     }
                   />

@@ -96,7 +96,8 @@ Business logic lives in `apps/api/src/services/`:
 | `auth.service` | Login, refresh, logout, invite, password reset |
 | `store.service` | CRUD, suspend, business settings |
 | `product.service` / `category.service` | Catalog |
-| `order.service` | Status transitions, COD confirm, courier |
+| `order.service` | Status transitions, COD confirm, manual courier fields |
+| `courier/courier.service` | Courier accounts, real shipment creation/sync, webhooks (see COURIER_ARCHITECTURE.md) |
 | `payment.service` | bKash submit, approve, reject |
 | `customer.service` / `customer-risk.service` | Customers, risk scoring |
 | `storefront.service` | Public catalog, checkout, OTP |

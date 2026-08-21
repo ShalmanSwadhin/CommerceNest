@@ -41,6 +41,7 @@ const emptyForm = {
   name: '',
   slug: '',
   basePrice: '0',
+  compareAtPrice: '',
   description: '',
   status: 'DRAFT',
   categoryId: '',
@@ -89,6 +90,13 @@ export function ProductsPage() {
         name: form.name,
         slug: form.slug,
         basePrice: Number(form.basePrice),
+        // Create's schema doesn't accept null (only present-or-absent);
+        // update's does, to allow explicitly clearing a previously-set value.
+        compareAtPrice: form.compareAtPrice.trim()
+          ? Number(form.compareAtPrice)
+          : editing
+            ? null
+            : undefined,
         description: form.description,
         status: form.status,
         categoryId: form.categoryId || undefined,
@@ -153,6 +161,7 @@ export function ProductsPage() {
       name: r.name,
       slug: r.slug,
       basePrice: String(r.basePrice),
+      compareAtPrice: r.compareAtPrice != null ? String(r.compareAtPrice) : '',
       description: r.description || '',
       status: r.status,
       categoryId: r.categoryId || '',
@@ -212,7 +221,21 @@ export function ProductsPage() {
               header: 'Status',
               cell: (r) => <Badge tone={statusTone[r.status] || 'neutral'}>{r.status}</Badge>,
             },
-            { key: 'price', header: 'Price', cell: (r) => formatBdt(r.basePrice) },
+            {
+              key: 'price',
+              header: 'Price',
+              cell: (r) =>
+                r.compareAtPrice && Number(r.compareAtPrice) > Number(r.basePrice) ? (
+                  <span className="flex items-baseline gap-1.5">
+                    <span>{formatBdt(r.basePrice)}</span>
+                    <span className="text-xs text-ink-tertiary line-through">
+                      {formatBdt(r.compareAtPrice)}
+                    </span>
+                  </span>
+                ) : (
+                  formatBdt(r.basePrice)
+                ),
+            },
             {
               key: 'stock',
               header: 'Stock',
@@ -280,6 +303,18 @@ export function ProductsPage() {
                 id="basePrice"
                 value={form.basePrice}
                 onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
+              />
+            </FormField>
+            <FormField
+              label="Compare-at price (optional)"
+              htmlFor="compareAtPrice"
+              description="Shown struck through next to the price when higher than the base price."
+            >
+              <Input
+                id="compareAtPrice"
+                value={form.compareAtPrice}
+                onChange={(e) => setForm((f) => ({ ...f, compareAtPrice: e.target.value }))}
+                placeholder="No compare-at price"
               />
             </FormField>
             <FormField label="Status" htmlFor="status">

@@ -18,6 +18,11 @@ export interface ThemePresetSeed {
   typographyPreset: 'modern' | 'elegant' | 'minimal' | 'bold' | 'classic';
   headerStyle: 'solid' | 'minimal' | 'centered';
   sections: { type: ThemeSectionType; settings?: Record<string, unknown> }[];
+  /** Selects the storefront rendering tree — omit (or 'default') for every
+   * existing preset, which keeps using the shared generic renderer
+   * unchanged. Only a preset built for a specific purpose-built component
+   * tree (apps/storefront/src/themes/) sets this. */
+  templateId?: 'default' | 'modern-commerce';
 }
 
 function section(
@@ -287,6 +292,111 @@ export const THEME_PRESETS: ThemePresetSeed[] = [
       section('newsletter', {
         title: 'Join the List',
         subtitle: 'Early access to new arrivals and private sales — no spam, ever.',
+      }),
+    ],
+  },
+  {
+    // Source design: Figma Make export "ModernCommerce" — a near-black +
+    // indigo, editorial-serif-heading premium storefront. Renders through
+    // apps/storefront/src/themes/modern-commerce/ (templateId below) — a
+    // purpose-built component tree matching the source's actual layout and
+    // chrome, not the shared generic renderer with different tokens.
+    name: 'Premium Modern',
+    category: 'Premium Lifestyle',
+    description:
+      'A sharp, monochrome-plus-indigo premium layout with serif display headings, a real cart drawer, search overlay and mobile nav — for stores that want a true editorial storefront experience.',
+    displayOrder: 10,
+    templateId: 'modern-commerce',
+    colors: {
+      primary: '#111111',
+      secondary: '#4338CA',
+      accent: '#4338CA',
+      background: '#F9FAFB',
+      surface: '#FFFFFF',
+      text: '#111111',
+      mutedText: '#4B5563',
+      border: '#E5E7EB',
+    },
+    // Closest system-safe match to the source's DM Serif Display / Inter
+    // pairing: 'elegant' resolves to Georgia headings + Inter body (see
+    // theme.ts#TYPOGRAPHY_PRESETS). DM Serif Display itself isn't used —
+    // the storefront has no Google Fonts loading mechanism, so an unloaded
+    // custom font name would silently fall back past 'system-ui' to a
+    // plain sans-serif, losing the serif look entirely rather than
+    // approximating it. Adding real Google Fonts support is a separate,
+    // larger capability, not something to bolt on for one preset.
+    typographyPreset: 'elegant',
+    headerStyle: 'solid',
+    sections: [
+      // 1. Hero — full-bleed photo, restrained type, matches the source's
+      // dark, editorial hero treatment.
+      section('hero', {
+        badge: 'New Season',
+        title: 'Elevated Essentials',
+        subtitle: 'Modern staples, considered details — shop the new arrivals.',
+        primaryCtaLabel: 'Shop Collection',
+        layout: 'content-left',
+        height: 'lg',
+        backgroundType: 'image',
+        imageUrl: 'https://picsum.photos/seed/premium-modern-hero/1800/1100',
+        backgroundPosition: 'center',
+        overlayType: 'dark',
+        overlay: 40,
+      }),
+      // 2. Benefits row (source: Benefits.tsx) → why-choose-us, plain
+      // 4-card mode.
+      section('why-choose-us', {
+        title: 'Shop With Confidence',
+        items: [
+          { title: 'Free Delivery', description: 'On orders over 2,000 Tk' },
+          { title: 'Easy Returns', description: '7-day hassle-free returns' },
+          { title: 'Secure Checkout', description: 'bKash & Cash on Delivery' },
+          { title: 'Quality Guaranteed', description: 'Every item inspected before dispatch' },
+        ],
+      }),
+      // 3. Category grid (source: CategoryGrid.tsx).
+      section('featured-categories', { title: 'Shop by Category', limit: 6 }),
+      // 4. New Arrivals (source: NewArrivals.tsx) — a horizontally-scrolling
+      // carousel, distinct in presentation from the Featured Products grid
+      // below even though both currently read the same "newest" feed.
+      section('featured-products', {
+        title: 'New Arrivals',
+        subtitle: 'Just landed',
+        columns: 4,
+        limit: 8,
+        showViewAll: true,
+        displayStyle: 'carousel',
+      }),
+      // 5. Promo banner (source: PromoBanner.tsx) — real countdown, backed
+      // by the countdownEndsAt field the modern-commerce renderer reads.
+      // A fixed 48h-from-publish target; Master Admin can edit or clear it
+      // from the theme editor like any other section field.
+      section('promo-banner', {
+        heading: 'Season Sale — Up To 30% Off',
+        description: 'Considered pieces, now more accessible.',
+        ctaLabel: 'Shop the sale',
+        backgroundType: 'image',
+        imageUrl: 'https://picsum.photos/seed/premium-modern-promo/1400/700',
+        backgroundPosition: 'center',
+        overlayType: 'dark',
+        overlay: 45,
+        countdownEndsAt: new Date(Date.now() + 48 * 3600_000).toISOString(),
+      }),
+      // 6. Best sellers (source: BestSellers.tsx) — backed by real
+      // sales-ranked data (storefront.service.ts#getBestSellingProducts),
+      // genuinely distinct from the featured-products row above.
+      section('best-sellers', {
+        title: 'Best Sellers',
+        subtitle: 'Most loved this month',
+        columns: 4,
+        limit: 8,
+      }),
+      // 7. Testimonials (source: Testimonials.tsx).
+      section('testimonials', { title: 'What Our Customers Say' }),
+      // 8. Newsletter (source: Newsletter.tsx).
+      section('newsletter', {
+        title: 'Stay In The Loop',
+        subtitle: 'New arrivals and offers, straight to your inbox.',
       }),
     ],
   },

@@ -132,6 +132,23 @@ Target: V3+ when core platform is stable.
 
 ---
 
+## 9. Courier integration: Steadfast first, one provider only (Phase 6)
+
+| Source | Position |
+|--------|----------|
+| Brief | Build the courier abstraction once, integrate one real provider well rather than three shallowly |
+| **Decision** | **Steadfast Courier only in V1** — chosen over Pathao/RedX for static API-key/secret-key auth (no OAuth refresh flow, no multi-day merchant-approval process blocking integration on an external non-technical dependency) |
+
+Also scoped out of V1, deliberately:
+
+- Shipment cancellation — Steadfast's public API has no merchant-facing cancel endpoint
+- COD settlement/reconciliation accounting — the brief explicitly excluded this unless the chosen provider made it easy; Steadfast's public API doesn't expose a remittance feed
+- A second/third courier — the `CourierProvider` abstraction supports one, but only one ships now
+
+Full rationale and the abstraction's design: [COURIER_ARCHITECTURE.md](./COURIER_ARCHITECTURE.md).
+
+---
+
 ## Decision log maintenance
 
 When SRS and product direction conflict again:

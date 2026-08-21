@@ -107,6 +107,13 @@ export const OrderStatus = {
 } as const;
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
+export const ReviewStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+export type ReviewStatus = (typeof ReviewStatus)[keyof typeof ReviewStatus];
+
 export const PaymentMethod = {
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
   MANUAL_BKASH: 'MANUAL_BKASH',
@@ -256,6 +263,23 @@ export const MerchantPaymentStatus = {
 } as const;
 export type MerchantPaymentStatus =
   (typeof MerchantPaymentStatus)[keyof typeof MerchantPaymentStatus];
+
+/** CommerceNest's own normalized delivery-status vocabulary — every
+ * courier's raw status gets mapped into this set. See
+ * services/courier/types.ts and COURIER_ARCHITECTURE.md. */
+export const ShipmentStatus = {
+  CREATED: 'CREATED',
+  IN_REVIEW: 'IN_REVIEW',
+  PICKED_UP: 'PICKED_UP',
+  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY',
+  DELIVERED: 'DELIVERED',
+  PARTIAL_DELIVERED: 'PARTIAL_DELIVERED',
+  ON_HOLD: 'ON_HOLD',
+  CANCELLED: 'CANCELLED',
+  RETURNED: 'RETURNED',
+  FAILED: 'FAILED',
+} as const;
+export type ShipmentStatus = (typeof ShipmentStatus)[keyof typeof ShipmentStatus];
 
 /** Bangladesh mobile number: 01[3-9] followed by 8 digits (11 total). */
 export const BANGLADESH_PHONE_REGEX = /^01[3-9]\d{8}$/;

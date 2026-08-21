@@ -83,6 +83,15 @@ Copy `.env.example` to `.env` at the repository root. The API loads env via `dot
 | **Min length** | 32 characters |
 | **Purpose** | HMAC secret for refresh tokens |
 
+### `CREDENTIALS_ENCRYPTION_KEY`
+
+| | |
+|---|---|
+| **Example** | `change-me-credentials-encryption-key-min-32-chars` |
+| **Required** | Yes in production |
+| **Min length** | 32 characters |
+| **Purpose** | AES-256-GCM key (via scrypt) encrypting per-store courier API credentials at rest. Deliberately separate from the JWT secrets above — rotating one never force-invalidates the other. See [COURIER_ARCHITECTURE.md](./COURIER_ARCHITECTURE.md) §5. |
+
 ### `JWT_ACCESS_TTL`
 
 | | |

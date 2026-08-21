@@ -67,6 +67,7 @@ export const createProductSchema = z
     description: z.string().max(10000).optional(),
     categoryId: z.string().cuid().optional(),
     basePrice: moneySchema,
+    compareAtPrice: moneySchema.optional(),
     status: z
       .enum([ProductStatus.DRAFT, ProductStatus.ACTIVE])
       .default(ProductStatus.DRAFT),
@@ -76,7 +77,11 @@ export const createProductSchema = z
     lowStockThreshold: z.number().int().nonnegative().default(5),
     variants: z.array(createVariantSchema).min(1),
   })
-  .strict();
+  .strict()
+  .refine((data) => data.compareAtPrice === undefined || data.compareAtPrice > data.basePrice, {
+    message: 'Compare-at price must be greater than the selling price',
+    path: ['compareAtPrice'],
+  });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -87,6 +92,7 @@ export const updateProductSchema = z
     description: z.string().max(10000).nullable().optional(),
     categoryId: z.string().cuid().nullable().optional(),
     basePrice: moneySchema.optional(),
+    compareAtPrice: moneySchema.nullable().optional(),
     status: z
       .enum([
         ProductStatus.DRAFT,
@@ -100,7 +106,17 @@ export const updateProductSchema = z
     lowStockThreshold: z.number().int().nonnegative().optional(),
     variants: z.array(updateVariantSchema).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) =>
+      !data.compareAtPrice ||
+      data.basePrice === undefined ||
+      data.compareAtPrice > data.basePrice,
+    {
+      message: 'Compare-at price must be greater than the selling price',
+      path: ['compareAtPrice'],
+    },
+  );
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 

@@ -16,6 +16,7 @@ import { useStoreId } from '../stores/authStore';
 import { MerchantVerificationCard } from '../components/MerchantVerificationCard';
 import { DomainRequestCard } from '../components/DomainRequestCard';
 import { PlanUsageCard } from '../components/PlanUsageCard';
+import { CourierSettingsCard } from '../components/CourierSettingsCard';
 
 const STAFF_ROLES = [
   'STORE_MANAGER',
@@ -226,6 +227,8 @@ export function SettingsPage() {
           Save delivery charges
         </Button>
       </Card>
+
+      <CourierSettingsCard />
 
       <Card elevated className="max-w-2xl space-y-3">
         <h3 className="font-semibold">Invite staff</h3>

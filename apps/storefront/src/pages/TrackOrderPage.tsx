@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
 import { Alert, Badge, Button, Card, FormField, Input } from '@commercenest/ui';
 import { ApiClientError, storefrontApi, type LookupOrder, type StorefrontStore } from '../lib/api';
-import { formatBdt, formatDate } from '../lib/format';
+import { formatBdt, formatDate, ORDER_STATUS_LABEL, SHIPMENT_STATUS_LABEL } from '../lib/format';
 import { canonicalUrl } from '../lib/seo';
 import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
@@ -65,15 +65,30 @@ export function TrackOrderPage() {
       {order && (
         <Card elevated className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <Badge tone="primary">{order.status}</Badge>
-            <Badge tone="neutral">{order.paymentMethod}</Badge>
-            <Badge tone="caution">{order.paymentStatus}</Badge>
+            <Badge tone="primary">{ORDER_STATUS_LABEL[order.status] ?? order.status}</Badge>
+            {order.paymentMethod && <Badge tone="neutral">{order.paymentMethod}</Badge>}
+            {order.paymentStatus && <Badge tone="caution">{order.paymentStatus}</Badge>}
           </div>
           <div className="text-sm">
             <div className="font-medium">{order.orderNumber || order.id}</div>
             <div className="text-ink-secondary">{formatDate(order.createdAt)}</div>
             <div className="mt-2 font-semibold">{formatBdt(order.total)}</div>
           </div>
+          {order.shipment && (
+            <div className="rounded-cn border border-line bg-surface-raised p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="info">
+                  {SHIPMENT_STATUS_LABEL[order.shipment.status] ?? order.shipment.status}
+                </Badge>
+                <span className="text-ink-tertiary">via {order.shipment.provider}</span>
+              </div>
+              {order.shipment.trackingCode && (
+                <div className="mt-1 text-ink-secondary">
+                  Tracking number: <span className="font-medium text-ink">{order.shipment.trackingCode}</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-1 text-sm">
             {(order.items || []).map((item, idx) => (
               <div key={idx}>

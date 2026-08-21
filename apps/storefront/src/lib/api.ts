@@ -191,6 +191,9 @@ export interface StorefrontProduct {
   slug: string;
   description?: string | null;
   basePrice: number | string;
+  compareAtPrice?: number | string | null;
+  ratingAverage?: number | string | null;
+  reviewCount?: number;
   images?: Array<{ url: string; alt?: string }>;
   variants?: Array<{
     id: string;
@@ -214,6 +217,7 @@ export interface StorefrontCategory {
 export interface HomePayload {
   store: StorefrontStore;
   featuredProducts?: StorefrontProduct[];
+  bestSellingProducts?: StorefrontProduct[];
   categories?: StorefrontCategory[];
   theme?: StorefrontThemePayload | ThemeSettings | null;
 }
@@ -247,6 +251,12 @@ export interface LookupOrder {
   customerPhone?: string;
   createdAt?: string;
   items?: Array<{ productName?: string; quantity: number }>;
+  shipment?: {
+    provider: string;
+    trackingCode: string | null;
+    consignmentId: string | null;
+    status: string;
+  } | null;
 }
 
 export interface CustomerProfile {
@@ -455,4 +465,55 @@ export const storefrontApi = {
       method: 'POST',
       body: JSON.stringify({ orderId, reason }),
     }),
+  wishlist: (slug: string) =>
+    apiRequest<{ items: WishlistRow[] }>(sf(slug, '/wishlist')),
+  addToWishlist: (slug: string, productId: string) =>
+    apiRequest<{ wishlisted: boolean }>(sf(slug, `/wishlist/${productId}`), { method: 'POST' }),
+  removeFromWishlist: (slug: string, productId: string) =>
+    apiRequest<{ wishlisted: boolean }>(sf(slug, `/wishlist/${productId}`), { method: 'DELETE' }),
+  productReviews: (slug: string, productSlug: string, page = 1) =>
+    apiRequest<Paginated<ProductReview>>(
+      sf(slug, `/products/${productSlug}/reviews${toQuery({ page })}`),
+    ),
+  reviewEligibility: (slug: string, productSlug: string) =>
+    apiRequest<ReviewEligibility>(sf(slug, `/products/${productSlug}/reviews/eligibility`)),
+  submitReview: (
+    slug: string,
+    productSlug: string,
+    body: { orderId: string; rating: number; title?: string; comment?: string },
+  ) =>
+    apiRequest<ProductReview>(sf(slug, `/products/${productSlug}/reviews`), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  search: (slug: string, query: string) =>
+    apiRequest<Paginated<StorefrontProduct> | StorefrontProduct[]>(
+      sf(slug, `/products${toQuery({ search: query, limit: 8 })}`),
+    ),
 };
+
+export interface WishlistRow {
+  id: string;
+  addedAt: string;
+  product: StorefrontProduct;
+}
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  orderId: string;
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  customerName: string | null;
+  verifiedPurchase: boolean;
+}
+
+export interface ReviewEligibility {
+  canReview: boolean;
+  eligibleOrder: { id: string; orderNumber: string } | null;
+  existingReview: { id: string; status: string; rating: number; title: string | null; comment: string | null } | null;
+}

@@ -11,3 +11,4 @@ export * from './schemas/product.js';
 export * from './schemas/order.js';
 export * from './schemas/store.js';
 export * from './schemas/theme.js';
+export * from './schemas/review.js';

@@ -143,7 +143,10 @@ export async function transitionOrderStatus(
   storeId: string,
   orderId: string,
   input: unknown,
-  actor: { id: string; overrideReason?: string },
+  // id is nullable for system-triggered transitions (courier status sync/
+  // webhook — see courier.service.ts) where there's no human actor;
+  // OrderStatusHistory.actorId is already nullable for exactly this case.
+  actor: { id: string | null; overrideReason?: string },
 ) {
   const data = updateOrderStatusSchema.parse({
     ...(typeof input === 'object' && input ? input : {}),
@@ -361,7 +364,11 @@ export async function transitionOrderStatus(
     },
   });
 
-  if (toStatus === OrderStatus.CONFIRMED) {
+  if (toStatus === OrderStatus.CONFIRMED && actor.id) {
+    // Only a human confirms an order — a system-triggered call (actor.id
+    // null) would never legally reach CONFIRMED anyway (nothing drives
+    // that transition automatically), but guard explicitly rather than
+    // emit a payload claiming a null confirmedByUserId.
     emitAfterCommit('OrderConfirmed', {
       storeId,
       actorId: actor.id,

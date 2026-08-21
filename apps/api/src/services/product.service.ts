@@ -76,6 +76,7 @@ export async function createProduct(
         slug: data.slug,
         description: data.description,
         basePrice: data.basePrice,
+        compareAtPrice: data.compareAtPrice,
         status: data.status,
         images: data.images,
         seoTitle: data.seoTitle,
@@ -128,6 +129,14 @@ export async function updateProduct(
     data.status === ProductStatus.ACTIVE &&
     existing.status !== ProductStatus.ACTIVE;
 
+  // Zod's refine only sees data actually present in this request — it
+  // can't compare against the stored basePrice when only compareAtPrice is
+  // being changed. Check against the effective (post-update) basePrice here.
+  const effectiveBasePrice = data.basePrice ?? Number(existing.basePrice);
+  if (data.compareAtPrice && data.compareAtPrice <= effectiveBasePrice) {
+    throw AppError.badRequest('Compare-at price must be greater than the selling price');
+  }
+
   await withStoreLock(storeId, async (tx) => {
     if (data.slug && data.slug !== existing.slug) {
       const clash = await tx.product.findUnique({
@@ -148,6 +157,7 @@ export async function updateProduct(
         description: data.description === null ? null : data.description,
         categoryId: data.categoryId === null ? null : data.categoryId,
         basePrice: data.basePrice,
+        compareAtPrice: data.compareAtPrice === null ? null : data.compareAtPrice,
         status: data.status,
         images: data.images as Prisma.InputJsonValue | undefined,
         seoTitle: data.seoTitle === null ? null : data.seoTitle,

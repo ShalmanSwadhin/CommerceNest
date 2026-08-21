@@ -20,7 +20,7 @@ import {
   type StorefrontStore,
 } from '../lib/api';
 import { VerificationSection } from '../components/VerificationSection';
-import { formatBdt, formatDate } from '../lib/format';
+import { formatBdt, formatDate, ORDER_STATUS_LABEL } from '../lib/format';
 import { canonicalUrl } from '../lib/seo';
 import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
@@ -178,7 +178,7 @@ export function AccountPage() {
                 </div>
                 <div className="text-right">
                   <div className="font-medium">{formatBdt(order.total)}</div>
-                  <Badge tone="neutral">{order.status}</Badge>
+                  <Badge tone="neutral">{ORDER_STATUS_LABEL[order.status] ?? order.status}</Badge>
                   {order.status === 'DELIVERED' && !returnedOrderIds.has(order.id) ? (
                     <div className="mt-1">
                       <Button

@@ -1,6 +1,9 @@
 node_modules/
 dist/
 build/
+# Design reference material (e.g. Figma Make exports) — not application
+# code, not meant to be committed to history.
+design-import/
 .env
 .env.local
 .env.development

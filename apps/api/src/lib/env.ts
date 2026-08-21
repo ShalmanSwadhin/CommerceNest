@@ -13,6 +13,7 @@ config();
 
 const DEFAULT_JWT_ACCESS_SECRET = 'dev-access-secret-change-me-32chars!!';
 const DEFAULT_JWT_REFRESH_SECRET = 'dev-refresh-secret-change-me-32chars!';
+const DEFAULT_CREDENTIALS_ENCRYPTION_KEY = 'dev-credentials-key-change-me-32chars!';
 const DEFAULT_CORS_ORIGINS =
   'http://localhost:8080,http://admin.localhost:8080,http://app.localhost:8080,http://techworld-bd.localhost:8080';
 const DEFAULT_PLATFORM_DOMAIN = 'commercenest.local';
@@ -32,6 +33,13 @@ const envSchema = z.object({
     .string()
     .min(32)
     .default(DEFAULT_JWT_REFRESH_SECRET),
+  // Encrypts per-store secrets at rest (courier API credentials — see
+  // lib/crypto.ts) — kept separate from the JWT secrets so rotating one
+  // never force-invalidates the other.
+  CREDENTIALS_ENCRYPTION_KEY: z
+    .string()
+    .min(32)
+    .default(DEFAULT_CREDENTIALS_ENCRYPTION_KEY),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('7d'),
   COOKIE_SECURE: z
@@ -104,6 +112,15 @@ if (env.NODE_ENV === 'production') {
   ) {
     throw new Error(
       'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must not use development defaults in production',
+    );
+  }
+  if (env.CREDENTIALS_ENCRYPTION_KEY === DEFAULT_CREDENTIALS_ENCRYPTION_KEY) {
+    // Fatal, not a warning: this key protects merchant courier API
+    // credentials at rest. Booting with the published dev default would
+    // mean anyone who reads this repo can decrypt every store's courier
+    // credentials from a database dump.
+    throw new Error(
+      'CREDENTIALS_ENCRYPTION_KEY must not use the development default in production',
     );
   }
   if (!env.COOKIE_SECURE) {

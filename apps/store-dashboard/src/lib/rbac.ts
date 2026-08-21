@@ -13,6 +13,7 @@ export type NavKey =
   | 'categories'
   | 'coupons'
   | 'returns'
+  | 'reviews'
   | 'customers'
   | 'payments'
   | 'billing'
@@ -31,6 +32,7 @@ const permissions: Record<NavKey, readonly string[]> = {
   categories: ['STORE_OWNER', 'STORE_MANAGER', 'INVENTORY_MANAGER'],
   coupons: ['STORE_OWNER', 'STORE_MANAGER'],
   returns: ['STORE_OWNER', 'STORE_MANAGER', 'ORDER_MANAGER', 'CUSTOMER_SUPPORT'],
+  reviews: ['STORE_OWNER', 'STORE_MANAGER', 'CUSTOMER_SUPPORT'],
   customers: ['STORE_OWNER', 'STORE_MANAGER', 'ORDER_MANAGER', 'CUSTOMER_SUPPORT'],
   payments: ['STORE_OWNER', 'STORE_MANAGER', 'ORDER_MANAGER'],
   billing: ['STORE_OWNER', 'STORE_MANAGER'],

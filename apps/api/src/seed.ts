@@ -683,6 +683,7 @@ async function main() {
         colors: preset.colors,
         typography: { preset: preset.typographyPreset },
         header: { style: preset.headerStyle },
+        ...(preset.templateId ? { templateId: preset.templateId } : {}),
       },
     });
 

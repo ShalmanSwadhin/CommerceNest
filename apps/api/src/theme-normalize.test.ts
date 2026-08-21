@@ -6,6 +6,25 @@ import {
 } from '@commercenest/types';
 
 describe('normalizeThemeDocument', () => {
+  it('defaults templateId to "default" when the field is missing entirely (every theme predating this field)', () => {
+    const doc = normalizeThemeDocument({ themeSettings: {} });
+    expect(doc.themeSettings.templateId).toBe('default');
+  });
+
+  it('passes through an explicit templateId of "modern-commerce" unchanged', () => {
+    const doc = normalizeThemeDocument({
+      themeSettings: { templateId: 'modern-commerce' },
+    });
+    expect(doc.themeSettings.templateId).toBe('modern-commerce');
+  });
+
+  it('falls back to "default" for an unknown/garbage templateId instead of throwing', () => {
+    const doc = normalizeThemeDocument({
+      themeSettings: { templateId: 'some-future-template' },
+    });
+    expect(doc.themeSettings.templateId).toBe('default');
+  });
+
   it('seeds default sections from legacy flat settings', () => {
     const doc = normalizeThemeDocument({
       themeSettings: {

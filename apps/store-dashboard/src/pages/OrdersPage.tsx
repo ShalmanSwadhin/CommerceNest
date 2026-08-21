@@ -14,7 +14,7 @@ import {
   Textarea,
   useToast,
 } from '@commercenest/ui';
-import { ApiClientError, storeApi, type OrderRow, unwrapList } from '../lib/api';
+import { ApiClientError, storeApi, type OrderRow, type ShipmentRow, unwrapList } from '../lib/api';
 import { formatBdt, formatDate } from '../lib/format';
 import { ErrorState, PageSkeleton } from '../components/QueryState';
 import { RiskBadge } from '../components/RiskBadge';
@@ -45,6 +45,66 @@ function paymentTone(status?: string) {
   return 'neutral' as const;
 }
 
+const SHIPMENT_STATUS_LABEL: Record<string, string> = {
+  CREATED: 'Created — awaiting pickup',
+  IN_REVIEW: 'Under courier review',
+  PICKED_UP: 'Picked up',
+  OUT_FOR_DELIVERY: 'Out for delivery',
+  DELIVERED: 'Delivered',
+  PARTIAL_DELIVERED: 'Partially delivered',
+  ON_HOLD: 'On hold',
+  CANCELLED: 'Cancelled',
+  RETURNED: 'Returned',
+  FAILED: 'Unknown / needs attention',
+};
+
+function shipmentStatusTone(status: string) {
+  if (status === 'DELIVERED') return 'success' as const;
+  if (status === 'CANCELLED' || status === 'RETURNED' || status === 'FAILED') return 'danger' as const;
+  if (status === 'ON_HOLD') return 'caution' as const;
+  return 'info' as const;
+}
+
+const SHIPPABLE_STATUSES = new Set(['CONFIRMED', 'PROCESSING']);
+
+function ShipmentDetail({
+  shipment,
+  onSync,
+  syncing,
+}: {
+  shipment: ShipmentRow;
+  onSync: () => void;
+  syncing: boolean;
+}) {
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={shipmentStatusTone(shipment.status)}>
+          {SHIPMENT_STATUS_LABEL[shipment.status] ?? shipment.status}
+        </Badge>
+        <span className="text-ink-tertiary">via {shipment.provider}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-ink-secondary">
+        <div>
+          Tracking code: <span className="font-medium text-ink">{shipment.trackingCode ?? '—'}</span>
+        </div>
+        <div>
+          Consignment ID: <span className="font-medium text-ink">{shipment.consignmentId ?? '—'}</span>
+        </div>
+        {shipment.codAmount > 0 && (
+          <div>
+            COD amount: <span className="font-medium text-ink">{formatBdt(shipment.codAmount)}</span>
+          </div>
+        )}
+        <div>Last synced: {shipment.lastSyncedAt ? formatDate(shipment.lastSyncedAt) : 'Never'}</div>
+      </div>
+      <Button size="sm" variant="secondary" loading={syncing} onClick={onSync}>
+        Sync status
+      </Button>
+    </div>
+  );
+}
+
 export function OrdersPage() {
   const storeId = useStoreId();
   const { toast } = useToast();
@@ -71,9 +131,16 @@ export function OrdersPage() {
   const order = detailQ.data || selected;
   const rows = useMemo(() => unwrapList(q.data), [q.data]);
 
+  const shipmentQ = useQuery({
+    queryKey: ['store', storeId, 'shipment', selected?.id],
+    queryFn: () => storeApi.getShipment(storeId!, selected!.id),
+    enabled: !!storeId && !!selected?.id,
+  });
+
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['store', storeId, 'orders'] });
     void qc.invalidateQueries({ queryKey: ['store', storeId, 'order', selected?.id] });
+    void qc.invalidateQueries({ queryKey: ['store', storeId, 'shipment', selected?.id] });
   };
 
   const statusMut = useMutation({
@@ -142,6 +209,38 @@ export function OrdersPage() {
     onError: (err) =>
       toast({
         title: 'Payment action failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const createShipmentMut = useMutation({
+    mutationFn: () => storeApi.createShipment(storeId!, order!.id),
+    onSuccess: (shipment) => {
+      toast({
+        title: 'Shipment created',
+        description: `Tracking code: ${shipment.trackingCode ?? shipment.consignmentId}`,
+        tone: 'success',
+      });
+      invalidate();
+    },
+    onError: (err) =>
+      toast({
+        title: 'Could not create shipment',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const syncShipmentMut = useMutation({
+    mutationFn: () => storeApi.syncShipment(storeId!, order!.id),
+    onSuccess: () => {
+      toast({ title: 'Shipment status refreshed', tone: 'success' });
+      invalidate();
+    },
+    onError: (err) =>
+      toast({
+        title: 'Could not refresh status',
         description: err instanceof ApiClientError ? err.message : 'Unknown error',
         tone: 'danger',
       }),
@@ -311,7 +410,35 @@ export function OrdersPage() {
             </div>
 
             <div className="space-y-2 rounded-cn border border-line p-3">
-              <h4 className="text-sm font-semibold">Courier details</h4>
+              <h4 className="text-sm font-semibold">Shipment</h4>
+              {shipmentQ.data ? (
+                <ShipmentDetail
+                  shipment={shipmentQ.data}
+                  onSync={() => syncShipmentMut.mutate()}
+                  syncing={syncShipmentMut.isPending}
+                />
+              ) : SHIPPABLE_STATUSES.has(order.status) ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-ink-secondary">
+                    No shipment created yet. Creating one submits this order to your connected
+                    courier and gets a real tracking number.
+                  </p>
+                  <Button size="sm" loading={createShipmentMut.isPending} onClick={() => createShipmentMut.mutate()}>
+                    Create shipment
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-ink-tertiary">
+                  A shipment can be created once this order is confirmed.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2 rounded-cn border border-line p-3">
+              <h4 className="text-sm font-semibold">Manual courier details</h4>
+              <p className="text-xs text-ink-tertiary">
+                For couriers without a live integration, or to override the tracking info above.
+              </p>
               <FormField label="Courier name" htmlFor="courierName">
                 <Input
                   id="courierName"

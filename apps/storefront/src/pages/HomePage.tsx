@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
@@ -23,6 +23,7 @@ import { ProductCard } from '../components/ProductCard';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
 import { CtaLink } from '../lib/ctaLink';
 import { cloudinaryThumb } from '../lib/media';
+import { renderModernSection } from '../themes/modern-commerce/HomeSections';
 
 /**
  * Renders a section's primary CTA per the store's Design System button-style
@@ -83,6 +84,7 @@ function renderSection(
   ctx: {
     store: StorefrontStore;
     featured: StorefrontProduct[];
+    bestSelling: StorefrontProduct[];
     categories: { id: string; name: string; slug: string; imageUrl?: string | null }[];
     primary: string;
     locale: 'en' | 'bn';
@@ -215,13 +217,14 @@ function renderSection(
 
   if (section.type === 'featured-products' || section.type === 'best-sellers') {
     const limit = Number(s.limit || 8);
-    const products = ctx.featured.slice(0, limit);
+    const source = section.type === 'best-sellers' ? ctx.bestSelling : ctx.featured;
+    const products = source.slice(0, limit);
     return (
       <section key={section.id} className="mx-auto max-w-6xl px-4 py-12">
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-ink">
-              {String(s.title || 'Featured Products')}
+              {String(s.title || (section.type === 'best-sellers' ? 'Best Sellers' : 'Featured Products'))}
             </h2>
             {s.subtitle ? (
               <p className="mt-1 text-sm text-ink-secondary">{String(s.subtitle)}</p>
@@ -519,6 +522,22 @@ export function HomePage() {
     enabled: !!slug,
   });
 
+  // Memoized (was recomputed on every render) and keeps templateId sourced
+  // from the outlet context's already-normalized value (see StoreShell's
+  // outletTheme) instead of letting the raw re-extraction below shadow it —
+  // one validated source of truth for the routing decision, not two.
+  const doc = useMemo(() => {
+    const themeConfig = {
+      ...theme,
+      ...extractThemeSettings(q.data?.theme),
+      templateId: theme?.templateId,
+    };
+    return normalizeThemeDocument({
+      layout: q.data?.theme?.layout,
+      themeSettings: themeConfig,
+    });
+  }, [theme, q.data]);
+
   if (q.isLoading) return <PageSkeleton />;
   if (q.isError) {
     return (
@@ -532,16 +551,9 @@ export function HomePage() {
   }
 
   const data = q.data!;
-  const themeConfig = {
-    ...theme,
-    ...extractThemeSettings(data.theme),
-  };
-  const doc = normalizeThemeDocument({
-    layout: data.theme?.layout,
-    themeSettings: themeConfig,
-  });
   const featured = data.featuredProducts || [];
-  const primary = doc.themeSettings.colors.primary || themeConfig.primaryColor || '#6C1DB3';
+  const bestSelling = data.bestSellingProducts || [];
+  const primary = doc.themeSettings.colors.primary || theme?.primaryColor || '#6C1DB3';
   const { buttonStyle } = resolveDesignSystem(doc.themeSettings);
   const categories = unwrapCategories(catsQ.data);
   const description =
@@ -564,16 +576,21 @@ export function HomePage() {
         <meta property="og:url" content={canonicalUrl()} />
         {ogImage ? <meta property="og:image" content={ogImage} /> : null}
       </Helmet>
-      {doc.layout.sections.map((section) =>
-        renderSection(section, {
-          store: data.store,
-          featured,
-          categories,
-          primary,
-          locale,
-          buttonStyle,
-        }),
-      )}
+      {doc.themeSettings.templateId === 'modern-commerce'
+        ? doc.layout.sections.map((section) =>
+            renderModernSection(section, { store: data.store, featured, bestSelling, categories }),
+          )
+        : doc.layout.sections.map((section) =>
+            renderSection(section, {
+              store: data.store,
+              featured,
+              bestSelling,
+              categories,
+              primary,
+              locale,
+              buttonStyle,
+            }),
+          )}
     </div>
   );
 }

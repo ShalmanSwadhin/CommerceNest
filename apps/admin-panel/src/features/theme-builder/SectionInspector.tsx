@@ -20,6 +20,17 @@ function numberOrDefault(value: unknown, fallback: number): number {
   return Number.isNaN(n) ? fallback : n;
 }
 
+/** ISO string → the local-time value a native `datetime-local` input
+ * expects (`YYYY-MM-DDTHH:mm`). Empty/invalid input safely produces an
+ * empty string rather than throwing. */
+function toDatetimeLocalInput(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 type SectionInspectorProps = {
   storeId: string;
   tab: InspectorTab;
@@ -417,6 +428,21 @@ export function SectionInspector({
                     </select>
                   </FormField>
                 )}
+                {section.type !== 'featured-categories' && (
+                  <FormField
+                    label="Display style"
+                    description="Carousel is only rendered by the Modern Commerce template — other templates always show a grid."
+                  >
+                    <select
+                      className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+                      value={String(section.settings.displayStyle || 'grid')}
+                      onChange={(e) => patchSectionSetting('displayStyle', e.target.value)}
+                    >
+                      <option value="grid">Grid</option>
+                      <option value="carousel">Carousel</option>
+                    </select>
+                  </FormField>
+                )}
               </div>
             )}
 
@@ -441,6 +467,21 @@ export function SectionInspector({
                   <Input
                     value={String(section.settings.ctaLabel || '')}
                     onChange={(e) => patchSectionSetting('ctaLabel', e.target.value)}
+                  />
+                </FormField>
+                <FormField
+                  label="Countdown ends at (optional)"
+                  description="Only rendered by the Modern Commerce template. Leave blank for no countdown."
+                >
+                  <Input
+                    type="datetime-local"
+                    value={toDatetimeLocalInput(String(section.settings.countdownEndsAt || ''))}
+                    onChange={(e) =>
+                      patchSectionSetting(
+                        'countdownEndsAt',
+                        e.target.value ? new Date(e.target.value).toISOString() : '',
+                      )
+                    }
                   />
                 </FormField>
                 <BackgroundModeFields

@@ -5,7 +5,7 @@ function isApiErrorResponse(value: unknown): value is { error: { code: string; m
   const err = obj.error as Record<string, unknown>;
   return typeof err.code === 'string' && typeof err.message === 'string';
 }
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 export class ApiClientError extends Error {
   status: number;
@@ -240,12 +240,46 @@ export interface OrderRow {
   allowedStatusTransitions?: string[];
 }
 
+export interface CourierProviderInfo {
+  id: string;
+  label: string;
+  credentialFields: Array<{ key: string; label: string; secret: boolean; optional?: boolean }>;
+  supportsCancel: boolean;
+}
+
+export interface CourierAccountRow {
+  id: string;
+  provider: string;
+  enabled: boolean;
+  isDefault: boolean;
+  lastTestedAt?: string | null;
+  lastTestOk?: boolean | null;
+  lastTestMessage?: string | null;
+}
+
+export interface ShipmentRow {
+  id: string;
+  orderId: string;
+  provider: string;
+  consignmentId: string | null;
+  trackingCode: string | null;
+  status: string;
+  rawStatus: string | null;
+  codAmount: number;
+  deliveryCharge: number | null;
+  recipientName: string;
+  recipientPhone: string;
+  recipientAddress: string;
+  lastSyncedAt: string | null;
+}
+
 export interface ProductRow {
   id: string;
   name: string;
   slug: string;
   status: string;
   basePrice: number | string;
+  compareAtPrice?: number | string | null;
   categoryId?: string | null;
   category?: { name?: string } | null;
   images?: Array<{ url: string }>;
@@ -322,6 +356,21 @@ export interface ReturnRow {
   refundedAt?: string | null;
   order?: { orderNumber: string; total: string | number };
   customer?: { id: string; name: string; phone: string };
+}
+
+export interface ReviewRow {
+  id: string;
+  productId: string;
+  orderId: string;
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+  updatedAt: string;
+  customerName: string | null;
+  verifiedPurchase: boolean;
+  product?: { id: string; name: string; slug: string };
 }
 
 export interface ThemeVersion {
@@ -623,6 +672,15 @@ export const storeApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+  listReviews: (
+    storeId: string,
+    params: Record<string, string | number | undefined> = {},
+  ) => apiRequest<Paginated<ReviewRow>>(storePath(storeId, `/reviews${toQuery(params)}`)),
+  moderateReview: (storeId: string, reviewId: string, status: 'APPROVED' | 'REJECTED') =>
+    apiRequest<ReviewRow>(storePath(storeId, `/reviews/${reviewId}`), {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
   listCustomers: (
     storeId: string,
     params: Record<string, string | number | undefined>,
@@ -751,6 +809,37 @@ export const storeApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+  listCourierProviders: (storeId: string) =>
+    apiRequest<{ items: CourierProviderInfo[] }>(storePath(storeId, '/courier/providers')),
+  listCourierAccounts: (storeId: string) =>
+    apiRequest<{ items: CourierAccountRow[] }>(storePath(storeId, '/courier/accounts')),
+  saveCourierAccount: (
+    storeId: string,
+    body: { provider: string; credentials: Record<string, string>; enabled?: boolean; isDefault?: boolean },
+  ) =>
+    apiRequest<CourierAccountRow>(storePath(storeId, '/courier/accounts'), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  setCourierAccountEnabled: (storeId: string, accountId: string, enabled: boolean) =>
+    apiRequest<CourierAccountRow>(storePath(storeId, `/courier/accounts/${accountId}`), {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteCourierAccount: (storeId: string, accountId: string) =>
+    apiRequest<{ ok: boolean }>(storePath(storeId, `/courier/accounts/${accountId}`), {
+      method: 'DELETE',
+    }),
+  testCourierConnection: (storeId: string, accountId: string) =>
+    apiRequest<{ ok: boolean; message: string }>(storePath(storeId, `/courier/accounts/${accountId}/test`), {
+      method: 'POST',
+    }),
+  getShipment: (storeId: string, orderId: string) =>
+    apiRequest<ShipmentRow | null>(storePath(storeId, `/orders/${orderId}/shipment`)),
+  createShipment: (storeId: string, orderId: string) =>
+    apiRequest<ShipmentRow>(storePath(storeId, `/orders/${orderId}/shipment`), { method: 'POST' }),
+  syncShipment: (storeId: string, orderId: string) =>
+    apiRequest<ShipmentRow>(storePath(storeId, `/orders/${orderId}/shipment/sync`), { method: 'POST' }),
   checkDomainAvailability: (storeId: string, label: string) =>
     apiRequest<{ label: string; hostname: string; available: boolean; reason?: 'reserved' | 'taken' }>(
       storePath(storeId, `/domain-requests/check?label=${encodeURIComponent(label)}`),

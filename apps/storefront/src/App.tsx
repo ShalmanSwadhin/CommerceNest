@@ -5,6 +5,7 @@ import { ToastProvider } from '@commercenest/ui';
 import { configureApiAuth } from './lib/api';
 import { useAuthStore } from './stores/authStore';
 import { StoreShell } from './components/StoreShell';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { HomePage } from './pages/HomePage';
 import { CategoryPage } from './pages/CategoryPage';
 import { ProductPage } from './pages/ProductPage';
@@ -14,6 +15,7 @@ import { OrderSuccessPage } from './pages/OrderSuccessPage';
 import { TrackOrderPage } from './pages/TrackOrderPage';
 import { AuthPage } from './pages/AuthPage';
 import { AccountPage } from './pages/AccountPage';
+import { WishlistPage } from './pages/WishlistPage';
 import { CmsContentPage } from './pages/CmsContentPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -46,27 +48,30 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <AuthBootstrap>
-            <BrowserRouter>
-              <Routes>
-                <Route element={<StoreShell />}>
-                  <Route index element={<HomePage />} />
-                  <Route path="c/:categorySlug" element={<CategoryPage />} />
-                  <Route path="p/:productSlug" element={<ProductPage />} />
-                  <Route path="cart" element={<CartPage />} />
-                  <Route path="checkout" element={<CheckoutPage />} />
-                  <Route path="order-success" element={<OrderSuccessPage />} />
-                  <Route path="track" element={<TrackOrderPage />} />
-                  <Route path="login" element={<AuthPage mode="login" />} />
-                  <Route path="register" element={<AuthPage mode="register" />} />
-                  <Route path="forgot" element={<AuthPage mode="forgot" />} />
-                  <Route path="reset-password" element={<ResetPasswordPage />} />
-                  <Route path="verify-email" element={<VerifyEmailPage />} />
-                  <Route path="account" element={<AccountPage />} />
-                  <Route path="pages/:key" element={<CmsContentPage />} />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </BrowserRouter>
+            <ErrorBoundary>
+              <BrowserRouter>
+                <Routes>
+                  <Route element={<StoreShell />}>
+                    <Route index element={<HomePage />} />
+                    <Route path="c/:categorySlug" element={<CategoryPage />} />
+                    <Route path="p/:productSlug" element={<ProductPage />} />
+                    <Route path="cart" element={<CartPage />} />
+                    <Route path="checkout" element={<CheckoutPage />} />
+                    <Route path="order-success" element={<OrderSuccessPage />} />
+                    <Route path="track" element={<TrackOrderPage />} />
+                    <Route path="login" element={<AuthPage mode="login" />} />
+                    <Route path="register" element={<AuthPage mode="register" />} />
+                    <Route path="forgot" element={<AuthPage mode="forgot" />} />
+                    <Route path="reset-password" element={<ResetPasswordPage />} />
+                    <Route path="verify-email" element={<VerifyEmailPage />} />
+                    <Route path="account" element={<AccountPage />} />
+                    <Route path="account/wishlist" element={<WishlistPage />} />
+                    <Route path="pages/:key" element={<CmsContentPage />} />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </BrowserRouter>
+            </ErrorBoundary>
           </AuthBootstrap>
         </ToastProvider>
       </QueryClientProvider>

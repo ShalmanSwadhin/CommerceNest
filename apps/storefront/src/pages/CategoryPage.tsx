@@ -10,6 +10,7 @@ import {
   unwrapTotal,
   type StorefrontProductSort,
   type StorefrontStore,
+  type ThemeSettings,
 } from '../lib/api';
 import { useStoreSlug } from '../lib/storeSlug';
 import { canonicalUrl } from '../lib/seo';
@@ -17,6 +18,7 @@ import { t } from '../i18n/dictionary';
 import { useLocaleStore } from '../stores/localeStore';
 import { ProductCard } from '../components/ProductCard';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
+import { ModernShopPage } from '../themes/modern-commerce/ModernShopPage';
 
 const PAGE_SIZE = 24;
 
@@ -33,8 +35,15 @@ const SORT_OPTIONS: {
 export function CategoryPage() {
   const { categorySlug = 'all' } = useParams();
   const { slug } = useStoreSlug();
-  const { store } = useOutletContext<{ store?: StorefrontStore }>() ?? {};
+  const { store, theme } = useOutletContext<{ store?: StorefrontStore; theme?: ThemeSettings }>() ?? {};
   const locale = useLocaleStore((s) => s.locale);
+
+  // Delegates to the theme-specific shop page (sidebar filters, view
+  // toggle, load-more pagination) — every other theme keeps this generic
+  // page (numbered pagination, inline filter bar) unchanged.
+  if (theme?.templateId === 'modern-commerce') {
+    return <ModernShopPage />;
+  }
 
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<StorefrontProductSort>('newest');

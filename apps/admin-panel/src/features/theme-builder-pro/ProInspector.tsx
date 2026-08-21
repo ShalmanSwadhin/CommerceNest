@@ -66,6 +66,17 @@ const CONTENT_FIELDS: Record<ThemeSectionType, ContentField[]> = {
   ],
 };
 
+/** ISO string → the local-time value a native `datetime-local` input expects
+ * (`YYYY-MM-DDTHH:mm`). Invalid/empty input safely produces an empty
+ * string rather than throwing, so a countdown never crashes the editor. */
+function toDatetimeLocal(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const IMAGE_FIELD_TYPES: ThemeSectionType[] = ['hero', 'promo-banner', 'why-choose-us'];
 const BACKGROUND_TYPES_WITH_STYLE: ThemeSectionType[] = ['hero', 'promo-banner', 'testimonials'];
 
@@ -188,6 +199,36 @@ export function ProInspector({ storeId, section, onPatch, onResponsivePatch }: P
                 Quotes are sample/demo content for layout preview, not real customer reviews.
                 Edit individual quotes in the Standard Theme Builder&apos;s item editor.
               </p>
+            ) : null}
+            {section.type === 'promo-banner' ? (
+              <FormField
+                label="Countdown ends at (optional)"
+                description="Only rendered by the Modern Commerce template — every other template ignores this field. Leave blank for no countdown."
+              >
+                <input
+                  type="datetime-local"
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm"
+                  value={toDatetimeLocal(String(section.settings.countdownEndsAt || ''))}
+                  onChange={(e) =>
+                    onPatch({ countdownEndsAt: e.target.value ? new Date(e.target.value).toISOString() : '' })
+                  }
+                />
+              </FormField>
+            ) : null}
+            {section.type === 'featured-products' || section.type === 'best-sellers' ? (
+              <FormField
+                label="Display style"
+                description="Grid works in every template. Carousel (a horizontally-scrolling row) is only rendered by the Modern Commerce template — other templates fall back to a grid."
+              >
+                <select
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm"
+                  value={String(section.settings.displayStyle || 'grid')}
+                  onChange={(e) => onPatch({ displayStyle: e.target.value })}
+                >
+                  <option value="grid">Grid</option>
+                  <option value="carousel">Carousel</option>
+                </select>
+              </FormField>
             ) : null}
           </>
         ) : null}

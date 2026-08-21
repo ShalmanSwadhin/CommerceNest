@@ -122,7 +122,12 @@ export function ThemePage() {
           <div className="overflow-hidden rounded-xl border border-line">
             <div className="pointer-events-none h-[420px] overflow-hidden bg-[#E8EAF0]">
               <div className="scale-[0.85] origin-top">
-                <ThemeLivePreview doc={doc} device="desktop" storeName={storeName} />
+                <ThemeLivePreview
+                  doc={doc}
+                  device="desktop"
+                  storeName={storeName}
+                  previewUrl={storefrontPreviewUrl(slug)}
+                />
               </div>
             </div>
           </div>

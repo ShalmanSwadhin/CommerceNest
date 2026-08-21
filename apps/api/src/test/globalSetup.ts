@@ -76,6 +76,13 @@ export async function setup() {
     password: 'password',
     port,
     persistent: false,
+    // Without this, initdb falls back to the OS locale's encoding (WIN1252
+    // on this machine) instead of UTF8 — any non-ASCII text written during
+    // a test (Bengali currency symbols, names, etc.) then fails to insert
+    // with a "has no equivalent in encoding" Postgres error. Production
+    // Postgres (managed hosting) defaults to UTF8 already; this only
+    // matters for the embedded test instance on Windows.
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
     onLog: () => undefined,
     onError: (msg) => {
       console.warn('[embedded-postgres]', msg);

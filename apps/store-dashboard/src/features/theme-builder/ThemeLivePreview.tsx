@@ -24,6 +24,8 @@ type ThemeLivePreviewProps = {
   storeName: string;
   selectedSectionId?: string | null;
   onSelectSection?: (id: string) => void;
+  /** Real storefront URL — used only for the Modern Commerce fallback below. */
+  previewUrl?: string;
 };
 
 function SectionBlock({
@@ -265,6 +267,7 @@ export function ThemeLivePreview({
   storeName,
   selectedSectionId,
   onSelectSection,
+  previewUrl,
 }: ThemeLivePreviewProps) {
   const { themeSettings, layout } = doc;
   const colors = themeSettings.colors;
@@ -272,6 +275,33 @@ export function ThemeLivePreview({
   const header = themeSettings.header;
   const footer = themeSettings.footer;
   const radius = String(themeSettings.cornerRadius || 12);
+
+  // This preview only knows the generic section renderer above — it has no
+  // Modern Commerce equivalent (unlike admin-panel's ThemeLivePreview, which
+  // has a disclosed approximation). Rendering the generic preview here for a
+  // modern-commerce store would look like a real, wrong design with no
+  // indication anything's off, which is worse than admitting the gap and
+  // linking to the real thing.
+  if (themeSettings.templateId === 'modern-commerce') {
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto bg-[#E8EAF0] p-8 text-center">
+        <p className="text-sm font-semibold text-ink">Live preview isn&apos;t available for this template yet</p>
+        <p className="max-w-sm text-xs text-ink-secondary">
+          Your storefront uses the Modern Commerce design, which this preview panel doesn&apos;t render yet.
+          View your actual storefront to see exactly what customers see.
+        </p>
+        {previewUrl ? (
+          <button
+            type="button"
+            onClick={() => window.open(previewUrl, '_blank')}
+            className="mt-1 rounded-lg bg-[#6C1DB3] px-4 py-2 text-xs font-semibold text-white hover:opacity-90"
+          >
+            View live storefront
+          </button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center overflow-auto bg-[#E8EAF0] p-4">

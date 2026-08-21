@@ -17,6 +17,8 @@ import * as domainService from '../services/domain.service.js';
 import * as seoService from '../services/seo.service.js';
 import * as returnService from '../services/return.service.js';
 import * as verificationService from '../services/verification.service.js';
+import * as reviewService from '../services/review.service.js';
+import * as wishlistService from '../services/wishlist.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -136,6 +138,97 @@ storefrontRouter.get(
         param(req, 'productSlug'),
       ),
     );
+  }),
+);
+
+storefrontRouter.get(
+  '/products/:productSlug/reviews',
+  publicCatalogRateLimit,
+  asyncHandler(async (req, res) => {
+    res.json(
+      await reviewService.listApprovedReviews(
+        param(req, 'storeSlug'),
+        param(req, 'productSlug'),
+        req.query,
+      ),
+    );
+  }),
+);
+
+storefrontRouter.get(
+  '/products/:productSlug/reviews/eligibility',
+  requireCustomer,
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    res.json(
+      await reviewService.getReviewEligibility(store.id, req.customer.id, param(req, 'productSlug')),
+    );
+  }),
+);
+
+storefrontRouter.post(
+  '/products/:productSlug/reviews',
+  requireCustomer,
+  rateLimit({ windowSeconds: 60, max: 10, keyPrefix: 'rl:sf:review-submit' }),
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    res
+      .status(201)
+      .json(
+        await reviewService.submitReview(
+          store.id,
+          req.customer.id,
+          param(req, 'productSlug'),
+          req.body,
+        ),
+      );
+  }),
+);
+
+storefrontRouter.get(
+  '/wishlist',
+  requireCustomer,
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    res.json({ items: await wishlistService.listWishlist(store.id, req.customer.id) });
+  }),
+);
+
+storefrontRouter.post(
+  '/wishlist/:productId',
+  requireCustomer,
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    res.json(await wishlistService.addToWishlist(store.id, req.customer.id, param(req, 'productId')));
+  }),
+);
+
+storefrontRouter.delete(
+  '/wishlist/:productId',
+  requireCustomer,
+  asyncHandler(async (req, res) => {
+    if (!req.customer) throw AppError.unauthorized();
+    const store = await storefrontService.resolveStoreBySlug(param(req, 'storeSlug'));
+    if (req.customer.storeId !== store.id) {
+      throw AppError.forbidden('Customer does not belong to this store');
+    }
+    res.json(await wishlistService.removeFromWishlist(store.id, req.customer.id, param(req, 'productId')));
   }),
 );
 

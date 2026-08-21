@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   BANGLADESH_PHONE_REGEX,
   checkoutSchema,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   ProductStatus,
@@ -134,21 +135,61 @@ export async function getStorefrontSummary(storeSlug: string) {
   };
 }
 
+/**
+ * Real sales-ranked products (by total units across non-cancelled orders) —
+ * distinct from `featuredProducts` (newest), so a homepage with both a
+ * "New Arrivals" and a "Best Sellers" section shows genuinely different
+ * products instead of the same latest-12 list twice. Falls back to the
+ * caller's `featured` list for stores with no qualifying sales yet (a new
+ * store showing its newest products under "Best Sellers" is an honest
+ * degrade; an empty section is not).
+ */
+async function getBestSellingProducts(
+  storeId: string,
+  limit: number,
+  fallback: Prisma.ProductGetPayload<{ include: { variants: true } }>[],
+) {
+  const ranked = await prisma.orderItem.groupBy({
+    by: ['productId'],
+    where: {
+      storeId,
+      order: { status: { not: OrderStatus.CANCELLED } },
+    },
+    _sum: { quantity: true },
+    orderBy: { _sum: { quantity: 'desc' } },
+    take: limit,
+  });
+  if (ranked.length === 0) return fallback.slice(0, limit);
+
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: ranked.map((r) => r.productId) },
+      storeId,
+      status: ProductStatus.ACTIVE,
+    },
+    include: { variants: true },
+  });
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const ordered = ranked.map((r) => byId.get(r.productId)).filter((p) => p !== undefined);
+  return ordered.length > 0 ? ordered : fallback.slice(0, limit);
+}
+
 export async function getStorefrontHome(storeSlug: string) {
   const store = await resolveStoreBySlug(storeSlug, { allowExpiredTrial: true });
   const trialExpired = isTrialExpired(store);
 
   // Catalog only when store is ACTIVE and not an expired trial — never fall
   // back to draft theme.
-  const featured =
-    store.status === StoreStatus.ACTIVE && !trialExpired
-      ? await prisma.product.findMany({
-          where: { storeId: store.id, status: ProductStatus.ACTIVE },
-          include: { variants: true },
-          orderBy: { createdAt: 'desc' },
-          take: 12,
-        })
-      : [];
+  const storeIsLive = store.status === StoreStatus.ACTIVE && !trialExpired;
+  const featured = storeIsLive
+    ? await prisma.product.findMany({
+        where: { storeId: store.id, status: ProductStatus.ACTIVE },
+        include: { variants: true },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+      })
+    : [];
+  const bestSelling = storeIsLive ? await getBestSellingProducts(store.id, 12, featured) : [];
 
   const published = store.storefront?.publishedVersion ?? null;
 
@@ -175,6 +216,7 @@ export async function getStorefrontHome(storeSlug: string) {
           }
         : null,
     featuredProducts: featured,
+    bestSellingProducts: bestSelling,
   };
 }
 
@@ -586,9 +628,15 @@ export async function lookupOrder(
     include: {
       items: true,
       statusHistory: { orderBy: { createdAt: 'asc' } },
+      shipment: {
+        select: { provider: true, trackingCode: true, consignmentId: true, status: true },
+      },
     },
   });
   if (!order) throw AppError.notFound('Order not found');
+  // Deliberately not the raw order row — a customer sees shipment status/
+  // tracking/courier name, never courier credentials, our internal
+  // consignmentId lookup keys, or the raw courierResponse payload.
   return order;
 }
 
