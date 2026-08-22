@@ -30,15 +30,48 @@ async function buildRevenueSeries(storeId?: string, days = 14) {
     select: { createdAt: true, total: true },
   });
 
-  const map = new Map(keys.map((k) => [k, 0]));
+  const revenueMap = new Map(keys.map((k) => [k, 0]));
+  const countMap = new Map(keys.map((k) => [k, 0]));
   for (const order of orders) {
     const key = dayKey(order.createdAt);
-    if (map.has(key)) {
-      map.set(key, (map.get(key) ?? 0) + Number(order.total));
+    if (revenueMap.has(key)) {
+      revenueMap.set(key, (revenueMap.get(key) ?? 0) + Number(order.total));
+      countMap.set(key, (countMap.get(key) ?? 0) + 1);
     }
   }
 
-  return keys.map((date) => ({ date, revenue: map.get(date) ?? 0 }));
+  // orders (count) rides along on the same series as revenue — one query,
+  // one date axis, so a transactions-over-time chart doesn't need a second
+  // round trip just to plot a different y-value off the same underlying rows.
+  return keys.map((date) => ({
+    date,
+    revenue: revenueMap.get(date) ?? 0,
+    orders: countMap.get(date) ?? 0,
+  }));
+}
+
+/** New customer signups per day — Customer.createdAt is the only
+ * "did someone new show up" signal this schema has (no page-view
+ * tracking exists at all — see the "Viewers" gap noted where this is
+ * wired in). Always store-scoped; there is no platform-wide caller. */
+async function buildNewCustomersSeries(storeId: string, days = 14) {
+  const keys = lastNDays(days);
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  since.setUTCHours(0, 0, 0, 0);
+
+  const customers = await prisma.customer.findMany({
+    where: { storeId, createdAt: { gte: since } },
+    select: { createdAt: true },
+  });
+
+  const map = new Map(keys.map((k) => [k, 0]));
+  for (const customer of customers) {
+    const key = dayKey(customer.createdAt);
+    if (map.has(key)) map.set(key, (map.get(key) ?? 0) + 1);
+  }
+
+  return keys.map((date) => ({ date, newCustomers: map.get(date) ?? 0 }));
 }
 
 export async function getStoreSummary(storeId: string) {
@@ -52,6 +85,7 @@ export async function getStoreSummary(storeId: string) {
     recentOrders,
     revenueSeries,
     totalOrders,
+    newCustomersSeries,
   ] = await Promise.all([
     prisma.order.groupBy({
       by: ['status'],
@@ -97,6 +131,7 @@ export async function getStoreSummary(storeId: string) {
     }),
     buildRevenueSeries(storeId, 14),
     prisma.order.count({ where: { storeId } }),
+    buildNewCustomersSeries(storeId, 14),
   ]);
 
   const byStatus = Object.fromEntries(
@@ -122,6 +157,7 @@ export async function getStoreSummary(storeId: string) {
     customerRiskBreakdown: byRisk,
     recentOrders,
     revenueSeries,
+    newCustomersSeries,
   };
 }
 

@@ -211,7 +211,8 @@ export interface StoreSummary {
   customers?: number;
   products?: number;
   pendingPayments?: number;
-  revenueSeries?: Array<{ date: string; revenue: number }>;
+  revenueSeries?: Array<{ date: string; revenue: number; orders?: number }>;
+  newCustomersSeries?: Array<{ date: string; newCustomers: number }>;
 }
 
 export interface OrderRow {
@@ -320,6 +321,7 @@ export interface CategoryRow {
   name: string;
   slug: string;
   parentId?: string | null;
+  imageUrl?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   _count?: { products?: number };
@@ -476,6 +478,16 @@ export interface Invoice {
   status: InvoiceStatus;
   platformFeeRate: number | null;
   eligibleGmv: number | null;
+}
+
+export interface StoreNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  storeId: string | null;
+  readAt: string | null;
+  createdAt: string;
 }
 
 export interface MerchantPayment {
@@ -773,6 +785,14 @@ export const storeApi = {
         })),
       }),
     }),
+  // Same CmsContentBlock key-value store as listCms/saveCms above, one
+  // fixed key ('social-links') instead of the freeform block list — reused
+  // directly via the existing PUT /cms/:key route rather than a new table.
+  saveCmsKey: (storeId: string, key: string, fields: Record<string, unknown>) =>
+    apiRequest<CmsBlock>(storePath(storeId, `/cms/${encodeURIComponent(key)}`), {
+      method: 'PUT',
+      body: JSON.stringify({ fields }),
+    }),
   getTheme: (storeId: string) =>
     apiRequest<CurrentThemeResponse>(storePath(storeId, '/theme/current')),
   requestThemeCustomization: (storeId: string, message?: string) =>
@@ -901,6 +921,17 @@ export const storeApi = {
     apiRequest<MerchantPayment>(storePath(storeId, `/merchant-payments/${paymentId}/cancel`), {
       method: 'POST',
     }),
+  listNotifications: (
+    storeId: string,
+    params: Record<string, string | number | boolean | undefined> = {},
+  ) =>
+    apiRequest<{ items: StoreNotification[]; unreadCount: number; total: number }>(
+      storePath(storeId, `/notifications${toQuery(params)}`),
+    ),
+  markNotificationRead: (storeId: string, id: string) =>
+    apiRequest(storePath(storeId, `/notifications/${id}/read`), { method: 'POST' }),
+  markAllNotificationsRead: (storeId: string) =>
+    apiRequest(storePath(storeId, '/notifications/read-all'), { method: 'POST' }),
   listStaff: (storeId: string) =>
     apiRequest<StaffRow[] | { data?: StaffRow[]; items?: StaffRow[] }>(
       storePath(storeId, '/staff'),

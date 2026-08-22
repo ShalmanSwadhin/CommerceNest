@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Avatar, Button } from '@commercenest/ui';
 import { LogOut, Menu, X } from 'lucide-react';
 import { Sidebar } from './Sidebar';
+import { NotificationBell } from './NotificationBell';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { storeApi } from '../../lib/api';
 import { useAuthStore, useStoreId } from '../../stores/authStore';
@@ -77,6 +78,7 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-xs text-ink-secondary">{user?.role}</div>

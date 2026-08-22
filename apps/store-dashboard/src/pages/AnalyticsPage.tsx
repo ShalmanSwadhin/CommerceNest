@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, KpiCard } from '@commercenest/ui';
+import { BarChart, Card, CardContent, CardHeader, CardTitle, KpiCard } from '@commercenest/ui';
 import { storeApi } from '../lib/api';
 import { formatBdt, formatNumber } from '../lib/format';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
@@ -26,6 +26,7 @@ export function AnalyticsPage() {
 
   const data = q.data ?? {};
   const series = data.revenueSeries ?? [];
+  const newCustomersSeries = data.newCustomersSeries ?? [];
 
   return (
     <div className="space-y-6">
@@ -65,6 +66,45 @@ export function AnalyticsPage() {
             </table>
           )}
         </CardContent>
+      </Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card elevated>
+          <CardHeader>
+            <CardTitle>Transactions over time</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {series.length === 0 ? (
+              <SoftEmpty title="No series data" description="Confirmed orders will appear here." />
+            ) : (
+              <BarChart points={series.map((p) => ({ label: p.date, value: p.orders ?? 0 }))} height={200} />
+            )}
+          </CardContent>
+        </Card>
+        <Card elevated>
+          <CardHeader>
+            <CardTitle>New customers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {newCustomersSeries.length === 0 ? (
+              <SoftEmpty title="No series data" description="New signups will appear here." />
+            ) : (
+              <BarChart
+                points={newCustomersSeries.map((p) => ({ label: p.date, value: p.newCustomers }))}
+                height={200}
+                color="var(--cn-color-success)"
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      <Card elevated padding="md">
+        <CardTitle>Viewers</CardTitle>
+        <p className="mt-2 text-sm text-ink-secondary">
+          Not available — this store's storefront doesn't track page views today (no analytics-event model, no
+          tracking call on storefront page loads). Showing an order-derived number here would misrepresent actual
+          traffic, so this is left honestly blank rather than faked. Real view tracking would need a new event
+          model plus an ingestion endpoint — a separate feature, not a chart-styling change.
+        </p>
       </Card>
     </div>
   );

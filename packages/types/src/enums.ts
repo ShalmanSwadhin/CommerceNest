@@ -141,6 +141,7 @@ export type StorefrontVersionStatus =
 
 export const MediaUsageType = {
   PRODUCT_IMAGE: 'PRODUCT_IMAGE',
+  CATEGORY_IMAGE: 'CATEGORY_IMAGE',
   STORE_LOGO: 'STORE_LOGO',
   STORE_BANNER: 'STORE_BANNER',
   CMS_ASSET: 'CMS_ASSET',
@@ -178,6 +179,15 @@ export const SupportTicketPriority = {
 } as const;
 export type SupportTicketPriority =
   (typeof SupportTicketPriority)[keyof typeof SupportTicketPriority];
+
+export const ThemeRequestStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  COMPLETED: 'COMPLETED',
+} as const;
+export type ThemeRequestStatus =
+  (typeof ThemeRequestStatus)[keyof typeof ThemeRequestStatus];
 
 export const CouponDiscountType = {
   PERCENTAGE: 'PERCENTAGE',

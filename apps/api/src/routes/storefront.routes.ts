@@ -243,10 +243,11 @@ storefrontRouter.get(
       where: { storeId: store.id },
       orderBy: { name: 'asc' },
       include: {
-        // Themes can show a representative photo per category — derived
-        // from the category's own catalog (no separate "category image"
-        // field to manage), so it's only ever a real product photo, never
-        // a placeholder or fabricated asset.
+        // Fallback only — a merchant-set Category.imageUrl always wins
+        // (see below). Without one, themes still show a representative
+        // photo derived from the category's own catalog, so it's only
+        // ever a real product photo, never a placeholder or fabricated
+        // asset, for a category nobody has customized yet.
         products: {
           where: { status: 'ACTIVE' },
           orderBy: { createdAt: 'asc' },
@@ -255,7 +256,8 @@ storefrontRouter.get(
         },
       },
     });
-    const items = categories.map(({ products, ...category }) => {
+    const items = categories.map(({ products, imageUrl, ...category }) => {
+      if (imageUrl) return { ...category, imageUrl };
       const firstImages = Array.isArray(products[0]?.images)
         ? (products[0]?.images as Array<{ url?: string }>)
         : [];

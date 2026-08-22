@@ -28,6 +28,7 @@ const listQuerySchema = z.object({
   usageType: z
     .enum([
       'PRODUCT_IMAGE',
+      'CATEGORY_IMAGE',
       'STORE_LOGO',
       'STORE_BANNER',
       'CMS_ASSET',
@@ -147,6 +148,7 @@ const registerMediaSchema = z
     usageType: z
       .enum([
         'PRODUCT_IMAGE',
+        'CATEGORY_IMAGE',
         'STORE_LOGO',
         'STORE_BANNER',
         'CMS_ASSET',

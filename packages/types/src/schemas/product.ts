@@ -152,6 +152,7 @@ export const createCategorySchema = z
       .max(120)
       .regex(PRODUCT_SLUG_REGEX),
     parentId: z.string().cuid().optional(),
+    imageUrl: z.string().trim().max(2000).optional(),
     seoTitle: z.string().max(70).optional(),
     seoDescription: z.string().max(320).optional(),
   })

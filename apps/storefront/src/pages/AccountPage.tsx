@@ -179,6 +179,12 @@ export function AccountPage() {
                 <div className="text-right">
                   <div className="font-medium">{formatBdt(order.total)}</div>
                   <Badge tone="neutral">{ORDER_STATUS_LABEL[order.status] ?? order.status}</Badge>
+                  {order.paymentMethod === 'MANUAL_BKASH' && order.paymentStatus === 'REJECTED' ? (
+                    <div className="mt-1 max-w-[220px] text-xs text-red-600">
+                      Payment verification failed
+                      {order.bkashNote ? `: ${order.bkashNote}` : '.'} Contact us to resolve this order.
+                    </div>
+                  ) : null}
                   {order.status === 'DELIVERED' && !returnedOrderIds.has(order.id) ? (
                     <div className="mt-1">
                       <Button

@@ -2,29 +2,46 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
-import { adminApi } from '../../lib/api';
+import { storeApi } from '../../lib/api';
+import { useStoreId } from '../../stores/authStore';
 import { formatDate } from '../../lib/format';
 
+const BILLING_TYPES = new Set([
+  'INVOICE_OVERDUE',
+  'MERCHANT_PAYMENT_APPROVED',
+  'MERCHANT_PAYMENT_REJECTED',
+]);
+
+/**
+ * Store-dashboard's own notification inbox — same feature as admin-panel's
+ * NotificationBell (same Notification model, same read/mark-read routes,
+ * same UI), just scoped to this store's staff instead of Master Admin.
+ * Previously store-dashboard had no notification concept at all, so a
+ * store owner had no in-app way to learn their invoice went overdue or
+ * that a payment claim was approved/rejected.
+ */
 export function NotificationBell() {
+  const storeId = useStoreId();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const navigate = useNavigate();
 
   const q = useQuery({
-    queryKey: ['admin', 'notifications'],
-    queryFn: () => adminApi.listNotifications({ limit: 10 }),
+    queryKey: ['store', storeId, 'notifications'],
+    queryFn: () => storeApi.listNotifications(storeId!, { limit: 10 }),
+    enabled: !!storeId,
     refetchInterval: 30_000,
   });
 
   const markAllMut = useMutation({
-    mutationFn: () => adminApi.markAllNotificationsRead(),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'notifications'] }),
+    mutationFn: () => storeApi.markAllNotificationsRead(storeId!),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['store', storeId, 'notifications'] }),
   });
 
   const markOneMut = useMutation({
-    mutationFn: (id: string) => adminApi.markNotificationRead(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'notifications'] }),
+    mutationFn: (id: string) => storeApi.markNotificationRead(storeId!, id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['store', storeId, 'notifications'] }),
   });
 
   useEffect(() => {
@@ -86,8 +103,7 @@ export function NotificationBell() {
                   }`}
                   onClick={() => {
                     if (!n.readAt) markOneMut.mutate(n.id);
-                    if (n.type === 'trial_lead_created') navigate('/trial-leads');
-                    if (n.type === 'INVOICE_OVERDUE' || n.type === 'MERCHANT_PAYMENT_SUBMITTED') navigate('/billing');
+                    if (BILLING_TYPES.has(n.type)) navigate('/billing');
                     setOpen(false);
                   }}
                 >

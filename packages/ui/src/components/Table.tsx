@@ -30,6 +30,12 @@ export interface DataTableProps<T> {
   emptyDescription?: string;
   errorMessage?: string;
   className?: string;
+  /** Makes the whole row clickable (not just a cell's own link/button) —
+   * a click that originates inside a nested interactive element (button,
+   * link, input, select, or anything with role="button") is ignored here,
+   * so an inline row action still does only its own thing and never also
+   * fires this. No per-consumer stopPropagation wiring needed. */
+  onRowClick?: (row: T) => void;
 }
 
 export function Table({ className, children, ...props }: TableHTMLAttributes<HTMLTableElement>) {
@@ -147,6 +153,7 @@ export function DataTable<T>({
   emptyDescription = 'Try adjusting your filters or search query.',
   errorMessage = 'Something went wrong while loading data.',
   className,
+  onRowClick,
 }: DataTableProps<T>) {
   if (state === 'loading') {
     return (
@@ -217,7 +224,19 @@ export function DataTable<T>({
         </TableHeader>
         <TableBody>
           {data.map((row) => (
-            <TableRow key={getRowKey(row)}>
+            <TableRow
+              key={getRowKey(row)}
+              className={onRowClick ? 'cursor-pointer' : undefined}
+              onClick={
+                onRowClick
+                  ? (e) => {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('button, a, input, select, textarea, [role="button"]')) return;
+                      onRowClick(row);
+                    }
+                  : undefined
+              }
+            >
               {columns.map((col) => (
                 <TableCell key={col.key} className={col.className}>
                   {col.cell(row)}

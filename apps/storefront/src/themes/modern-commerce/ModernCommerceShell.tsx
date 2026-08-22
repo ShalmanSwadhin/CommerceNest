@@ -6,6 +6,7 @@ import {
   Clock,
   Facebook,
   Heart,
+  Instagram,
   Mail,
   MapPin,
   MessageCircle,
@@ -577,7 +578,15 @@ function MobileBottomNav({ cartCount, onOpenSearch, onOpenCart }: { cartCount: n
 // Footer
 // ---------------------------------------------------------------------------
 
-function Footer({ store }: { store?: StorefrontStore }) {
+function Footer({ store, slug }: { store?: StorefrontStore; slug: string }) {
+  const socialQ = useQuery({
+    queryKey: ['storefront', slug, 'cms', 'social-links'],
+    queryFn: () => storefrontApi.cms(slug, 'social-links'),
+    enabled: !!slug,
+  });
+  const social = socialQ.data?.fields as
+    | { facebook?: string; instagram?: string; whatsapp?: string }
+    | undefined;
   const columns: { title: string; links: { label: string; to: string }[] }[] = [
     {
       title: 'Shop',
@@ -653,14 +662,43 @@ function Footer({ store }: { store?: StorefrontStore }) {
           ))}
           <div>
             <div className="text-xs font-semibold uppercase tracking-widest text-white/40 mb-4">Connect</div>
-            <div className="flex gap-3 mb-6">
-              <span className="w-9 h-9 bg-white/10 rounded-sm flex items-center justify-center">
-                <Facebook size={13} />
-              </span>
-              <span className="w-9 h-9 bg-white/10 rounded-sm flex items-center justify-center">
-                <MessageCircle size={15} />
-              </span>
-            </div>
+            {social?.facebook || social?.instagram || social?.whatsapp ? (
+              <div className="flex gap-3 mb-6">
+                {social.facebook ? (
+                  <a
+                    href={social.facebook}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Facebook"
+                    className="w-9 h-9 bg-white/10 rounded-sm flex items-center justify-center hover:bg-white/20 transition-colors"
+                  >
+                    <Facebook size={13} />
+                  </a>
+                ) : null}
+                {social.instagram ? (
+                  <a
+                    href={social.instagram}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Instagram"
+                    className="w-9 h-9 bg-white/10 rounded-sm flex items-center justify-center hover:bg-white/20 transition-colors"
+                  >
+                    <Instagram size={13} />
+                  </a>
+                ) : null}
+                {social.whatsapp ? (
+                  <a
+                    href={social.whatsapp}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="WhatsApp"
+                    className="w-9 h-9 bg-white/10 rounded-sm flex items-center justify-center hover:bg-white/20 transition-colors"
+                  >
+                    <MessageCircle size={15} />
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
             <p className="text-xs text-white/40 leading-relaxed">Follow us for updates, new arrivals, and exclusive offers.</p>
           </div>
         </div>
@@ -736,7 +774,7 @@ export function ModernCommerceShell({
       <main className="flex-1 pb-16 lg:pb-0">
         <Outlet context={{ slug, store, theme: outletTheme }} />
       </main>
-      <Footer store={store} />
+      <Footer store={store} slug={slug} />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} slug={slug} categories={categories} />
       <MobileBottomNav cartCount={cartCount} onOpenSearch={() => setSearchOpen(true)} onOpenCart={() => setCartOpen(true)} />

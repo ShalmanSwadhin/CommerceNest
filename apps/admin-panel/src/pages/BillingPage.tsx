@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, Card, FormField, Input, Modal, useToast } from '@commercenest/ui';
-import { ApiClientError, adminApi, type InvoiceStatus, type MerchantPayment } from '../lib/api';
+import {
+  ApiClientError,
+  adminApi,
+  type InvoiceStatus,
+  type MerchantPayment,
+  type MerchantPaymentRecord,
+  type SuspensionEligibleStore,
+} from '../lib/api';
 import { formatDate } from '../lib/format';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
+import { downloadCsv } from '../lib/csv';
 
 function formatBdt(amount: number) {
   return `৳${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
@@ -36,10 +44,13 @@ function SummaryStats() {
   const q = useQuery({ queryKey: ['admin', 'billing', 'summary'], queryFn: () => adminApi.getBillingSummary() });
   if (q.isLoading || !q.data) return null;
   const s = q.data;
-  const cards: Array<{ label: string; value: string }> = [
+  const confirmedTotal = s.confirmedSubscriptionRevenue + s.confirmedPlatformFeeRevenue;
+  const cards: Array<{ label: string; value: string; emphasis?: boolean }> = [
+    { label: 'Confirmed revenue (received)', value: formatBdt(confirmedTotal), emphasis: true },
+    { label: '— Subscription revenue', value: formatBdt(s.confirmedSubscriptionRevenue) },
+    { label: '— Platform fee revenue', value: formatBdt(s.confirmedPlatformFeeRevenue) },
+    { label: 'Total outstanding (owed, not received)', value: formatBdt(s.totalOutstanding) },
     { label: 'Total invoiced', value: formatBdt(s.totalInvoiced) },
-    { label: 'Total collected', value: formatBdt(s.totalCollected) },
-    { label: 'Total outstanding', value: formatBdt(s.totalOutstanding) },
     { label: 'Merchant credit outstanding', value: formatBdt(s.totalMerchantCredit) },
     { label: 'Pending payment claims', value: String(s.pendingPaymentClaims) },
     { label: 'Overdue invoices', value: String(s.overdueInvoices) },
@@ -47,7 +58,7 @@ function SummaryStats() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {cards.map((c) => (
-        <Card key={c.label} elevated padding="md">
+        <Card key={c.label} elevated padding="md" className={c.emphasis ? 'ring-1 ring-[var(--cn-color-success)]' : undefined}>
           <p className="text-xs font-semibold uppercase text-ink-tertiary">{c.label}</p>
           <p className="mt-1 text-2xl font-bold text-ink">{c.value}</p>
         </Card>
@@ -276,6 +287,268 @@ function InvoicesTable() {
   );
 }
 
+const paymentStatusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
+  PENDING_VERIFICATION: 'caution',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'neutral',
+};
+
+const paymentStatusLabel: Record<string, string> = {
+  PENDING_VERIFICATION: 'Pending verification',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+};
+
+/**
+ * Platform-wide, all-statuses payment history — the real drill-down
+ * PendingPaymentsQueue above can't provide (it only ever shows
+ * PENDING_VERIFICATION; a claim disappears from it the moment it's acted
+ * on). This is "who paid us, how much, when, verified by whom," not just a
+ * queue to clear.
+ */
+function PaymentHistoryTable() {
+  const [statusFilter, setStatusFilter] = useState('');
+  const q = useQuery({
+    queryKey: ['admin', 'merchant-payments', 'all', statusFilter],
+    queryFn: () => adminApi.listAllMerchantPayments({ limit: 50, status: statusFilter || undefined }),
+  });
+
+  const items: MerchantPaymentRecord[] = q.data?.items ?? [];
+
+  const exportCsv = () => {
+    downloadCsv(
+      `commercenest-payment-history${statusFilter ? `-${statusFilter.toLowerCase()}` : ''}.csv`,
+      items,
+      [
+        { header: 'Store', value: (p) => p.store.name },
+        { header: 'Store slug', value: (p) => p.store.slug },
+        { header: 'Invoice', value: (p) => p.invoice.invoiceNumber },
+        { header: 'Period start', value: (p) => p.invoice.periodStart },
+        { header: 'Period end', value: (p) => p.invoice.periodEnd },
+        { header: 'Amount', value: (p) => p.amount },
+        { header: 'Currency', value: (p) => p.currency },
+        { header: 'Method', value: (p) => (p.method === 'MANUAL_BKASH' ? 'bKash' : 'Bank transfer') },
+        { header: 'Reference', value: (p) => p.referenceId },
+        { header: 'Submitted', value: (p) => p.submittedAt },
+        { header: 'Verified', value: (p) => p.verifiedAt ?? '' },
+        { header: 'Verified by', value: (p) => p.verifiedBy?.name ?? '' },
+        { header: 'Status', value: (p) => paymentStatusLabel[p.status] ?? p.status },
+      ],
+    );
+  };
+
+  return (
+    <Card elevated padding="none">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div>
+          <h3 className="font-semibold">Payment history</h3>
+          <p className="text-xs text-ink-secondary">Every merchant payment claim, any status, across every store.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="h-9 rounded-cn border border-[var(--cn-color-border-input)] bg-surface-base px-3 text-xs"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="PENDING_VERIFICATION">Pending verification</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <Button size="sm" variant="secondary" disabled={items.length === 0} onClick={exportCsv}>
+            Export CSV
+          </Button>
+        </div>
+      </div>
+      {q.isLoading ? (
+        <div className="p-5">
+          <PageSkeleton rows={2} />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="p-5">
+          <SoftEmpty title="No payments yet" description="Merchant payment claims will appear here once submitted." />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-line text-xs text-ink-tertiary">
+                <th className="px-4 py-3 font-medium">Store</th>
+                <th className="px-4 py-3 font-medium">Invoice / period</th>
+                <th className="px-4 py-3 text-right font-medium">Amount</th>
+                <th className="px-4 py-3 font-medium">Method</th>
+                <th className="px-4 py-3 font-medium">Submitted</th>
+                <th className="px-4 py-3 font-medium">Verified</th>
+                <th className="px-4 py-3 font-medium">Verified by</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((p) => (
+                <tr key={p.id} className="border-b border-line last:border-0">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{p.store.name}</div>
+                    <div className="text-xs text-ink-tertiary">{p.store.slug}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>{p.invoice.invoiceNumber}</div>
+                    <div className="text-xs text-ink-tertiary">
+                      {formatDate(p.invoice.periodStart)} – {formatDate(p.invoice.periodEnd)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium">{formatBdt(p.amount)}</td>
+                  <td className="px-4 py-3">{p.method === 'MANUAL_BKASH' ? 'bKash' : 'Bank transfer'}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{formatDate(p.submittedAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{p.verifiedAt ? formatDate(p.verifiedAt) : '—'}</td>
+                  <td className="px-4 py-3">{p.verifiedBy?.name ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    <Badge tone={paymentStatusTone[p.status] ?? 'neutral'}>
+                      {paymentStatusLabel[p.status] ?? p.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Manual review list only — never suspends anyone by itself. Master Admin
+ * reviews each row and clicks "Suspend" one store at a time, going through
+ * the exact same confirm-with-reason flow StoresPage.tsx already uses
+ * (same adminApi.suspendStore call, same existing suspend logic) — this is
+ * a filtered entry point into that existing action, not new suspension
+ * logic. Suspending here now also notifies the store owner why (Part 1's
+ * notification plumbing, wired at the StoreSuspended event, not here).
+ */
+function SuspensionEligibleList() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [suspendTarget, setSuspendTarget] = useState<SuspensionEligibleStore | null>(null);
+  const [reason, setReason] = useState('');
+
+  const q = useQuery({
+    queryKey: ['admin', 'billing', 'suspension-eligible'],
+    queryFn: () => adminApi.getSuspensionEligibleStores(),
+  });
+
+  const suspendMut = useMutation({
+    mutationFn: () => adminApi.suspendStore(suspendTarget!.storeId, reason),
+    onSuccess: () => {
+      toast({ title: 'Store suspended', tone: 'caution' });
+      setSuspendTarget(null);
+      setReason('');
+      void qc.invalidateQueries({ queryKey: ['admin', 'billing', 'suspension-eligible'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'stores'] });
+    },
+    onError: (err) =>
+      toast({
+        title: 'Suspend failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const items = q.data?.items ?? [];
+
+  return (
+    <Card elevated padding="none">
+      <div className="border-b border-line px-5 py-4">
+        <h3 className="font-semibold">Stores eligible for suspension review</h3>
+        <p className="text-xs text-ink-secondary">
+          Overdue past the configured grace period (Settings → Merchant billing). This is a review list, not an
+          automatic action — nothing here suspends a store without you clicking it.
+        </p>
+      </div>
+      {q.isLoading ? (
+        <div className="p-5">
+          <PageSkeleton rows={2} />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="p-5">
+          <SoftEmpty title="No stores currently eligible" description="No store has been overdue past the grace period." />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-line text-xs text-ink-tertiary">
+                <th className="px-4 py-3 font-medium">Store</th>
+                <th className="px-4 py-3 font-medium">Overdue invoice(s)</th>
+                <th className="px-4 py-3 text-right font-medium">Overdue amount</th>
+                <th className="px-4 py-3 text-right font-medium">Days overdue</th>
+                <th className="px-4 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((s) => (
+                <tr key={s.storeId} className="border-b border-line last:border-0">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{s.storeName}</div>
+                    <div className="text-xs text-ink-tertiary">{s.storeSlug}</div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-ink-tertiary">{s.invoiceNumbers.join(', ')}</td>
+                  <td className="px-4 py-3 text-right font-medium">{formatBdt(s.totalOverdue)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Badge tone="danger">{s.daysOverdue} days</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        setSuspendTarget(s);
+                        setReason(
+                          `Non-payment — ${formatBdt(s.totalOverdue)} overdue by ${s.daysOverdue} days across invoice(s) ${s.invoiceNumbers.join(', ')}.`,
+                        );
+                      }}
+                    >
+                      Suspend
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal
+        open={!!suspendTarget}
+        onClose={() => setSuspendTarget(null)}
+        title="Suspend store"
+        description={`Suspend ${suspendTarget?.storeName ?? 'store'}? Orders and storefront access will be blocked. The owner will be notified with this reason.`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSuspendTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={suspendMut.isPending}
+              disabled={!reason.trim()}
+              onClick={() => suspendMut.mutate()}
+            >
+              Suspend
+            </Button>
+          </>
+        }
+      >
+        <FormField label="Reason (shown to the store owner)" htmlFor="suspend-reason" required>
+          <Input id="suspend-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+        </FormField>
+      </Modal>
+    </Card>
+  );
+}
+
 /**
  * Platform-wide billing — subscription charges + platform fees across every
  * store, one row per store per billing period; plus invoices generated from
@@ -316,6 +589,10 @@ export function BillingPage() {
       <PendingPaymentsQueue />
 
       <InvoicesTable />
+
+      <PaymentHistoryTable />
+
+      <SuspensionEligibleList />
 
       <Card elevated padding="md" className="flex items-center gap-3">
         <input

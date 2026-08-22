@@ -14,10 +14,11 @@ import { Plus, Trash2 } from 'lucide-react';
 import { ApiClientError, storeApi, type CategoryRow } from '../lib/api';
 import { ErrorState, PageSkeleton } from '../components/QueryState';
 import { useAuthStore, useStoreId } from '../stores/authStore';
+import { MediaImageField } from '../features/theme-builder/MediaImageField';
 
 const CAN_DELETE_ROLES = new Set(['STORE_OWNER', 'STORE_MANAGER', 'MASTER_ADMIN']);
 
-const emptyForm = { name: '', slug: '', parentId: '', seoTitle: '', seoDescription: '' };
+const emptyForm = { name: '', slug: '', parentId: '', imageUrl: '', seoTitle: '', seoDescription: '' };
 
 export function CategoriesPage() {
   const storeId = useStoreId();
@@ -62,6 +63,11 @@ export function CategoriesPage() {
         name: form.name.trim(),
         slug: form.slug.trim(),
         parentId: form.parentId || undefined,
+        // Always sent, even empty — an omitted key means "leave untouched"
+        // on the backend, but Remove-image needs an explicit clear to go
+        // through, so this can't use the same `|| undefined` pattern as
+        // the optional text fields below.
+        imageUrl: form.imageUrl.trim(),
         seoTitle: form.seoTitle.trim() || undefined,
         seoDescription: form.seoDescription.trim() || undefined,
       };
@@ -138,6 +144,17 @@ export function CategoriesPage() {
           emptyTitle="No categories yet"
           emptyDescription="Add a category to start organizing your products."
           columns={[
+            {
+              key: 'image',
+              header: '',
+              headerClassName: 'w-16',
+              cell: (r) =>
+                r.imageUrl ? (
+                  <img src={r.imageUrl} alt="" className="h-10 w-10 rounded-cn object-cover bg-surface-sunken" />
+                ) : (
+                  <div className="h-10 w-10 rounded-cn bg-surface-sunken" />
+                ),
+            },
             { key: 'name', header: 'Name', cell: (r) => r.name },
             { key: 'slug', header: 'Slug', cell: (r) => r.slug },
             {
@@ -165,6 +182,7 @@ export function CategoriesPage() {
                         name: r.name,
                         slug: r.slug,
                         parentId: r.parentId || '',
+                        imageUrl: r.imageUrl || '',
                         seoTitle: r.seoTitle || '',
                         seoDescription: r.seoDescription || '',
                       });
@@ -225,6 +243,14 @@ export function CategoriesPage() {
               placeholder="e.g. mens-fashion"
             />
           </FormField>
+          <MediaImageField
+            storeId={storeId}
+            label="Category image"
+            value={form.imageUrl}
+            usageType="CATEGORY_IMAGE"
+            hint="Shown on the storefront's category grid. Without one, a photo from this category's own products is used instead."
+            onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))}
+          />
           <FormField label="Parent category" htmlFor="cat-parent">
             <select
               id="cat-parent"

@@ -31,6 +31,7 @@ import * as invoiceService from '../services/invoice.service.js';
 import * as merchantPaymentService from '../services/merchant-payment.service.js';
 import * as courierService from '../services/courier/courier.service.js';
 import * as reviewService from '../services/review.service.js';
+import * as notificationService from '../services/notification.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -848,6 +849,41 @@ storeRouter.post(
   }),
 );
 
+// Notifications — mirrors admin.routes.ts's Master Admin inbox exactly,
+// same notificationService functions (already userId-generic, not
+// Master-Admin-specific), just reached via the store router so the
+// requireStoreScope/STORE_STAFF_ROLES gate above already applies. Any
+// store staff role can read their own inbox (whoever it was addressed
+// to); only notifyStoreStaff's own STORE_OWNER/STORE_MANAGER filter
+// controls who billing alerts actually get sent to in the first place.
+storeRouter.get(
+  '/notifications',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await notificationService.listNotifications(req.user!.id, {
+        unreadOnly: req.query.unreadOnly === 'true',
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      }),
+    );
+  }),
+);
+
+storeRouter.post(
+  '/notifications/:id/read',
+  asyncHandler(async (req, res) => {
+    res.json(await notificationService.markNotificationRead(req.user!.id, param(req, 'id')));
+  }),
+);
+
+storeRouter.post(
+  '/notifications/read-all',
+  asyncHandler(async (req, res) => {
+    await notificationService.markAllNotificationsRead(req.user!.id);
+    res.json({ ok: true });
+  }),
+);
+
 // Settings
 storeRouter.get(
   '/settings/business',
@@ -959,6 +995,7 @@ storeRouter.post(
             'Merchant requested custom theme design service via the Theme & Design page.',
         },
         actor(req),
+        { isThemeCustomizationRequest: true },
       ),
     );
   }),

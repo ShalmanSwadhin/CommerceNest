@@ -809,5 +809,215 @@ describe.skipIf(!hasDatabase)('Payment verification security', () => {
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({ reason: 'test' });
     expect(reject.status).toBe(403);
+
+    const allPayments = await request(app)
+      .get('/api/admin/merchant-payments')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(allPayments.status).toBe(403);
+
+    const billingSummary = await request(app)
+      .get('/api/admin/billing/summary')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(billingSummary.status).toBe(403);
+  });
+});
+
+describe.skipIf(!hasDatabase)('Overdue detection (computed on read, no scheduled job)', () => {
+  beforeAll(async () => {
+    await initRedis();
+  });
+
+  it('an invoice past its due date with nothing paid becomes OVERDUE the next time it is read', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 500, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    expect(invoice.status).toBe('ISSUED');
+
+    // Simulate time passing — push the due date into the past directly,
+    // the same way a real invoice's due date is eventually just "before
+    // now" without needing to actually wait 7 real days in a test.
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { dueDate: new Date(Date.now() - 1000) } });
+
+    const detail = await invoiceService.getInvoiceDetail(storeId, invoice.id);
+    expect(detail.invoice.status).toBe('OVERDUE');
+
+    const reloaded = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(reloaded.status).toBe('OVERDUE');
+  });
+
+  it('a PARTIALLY_PAID invoice past its due date also becomes OVERDUE', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 1000, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 300,
+      referenceId: uniqueSlug('overdue-partial-ref'),
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.approvePayment(payment.id, admin.id);
+
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { dueDate: new Date(Date.now() - 1000) } });
+    const detail = await invoiceService.getInvoiceDetail(storeId, invoice.id);
+    expect(detail.invoice.status).toBe('OVERDUE');
+    expect(detail.invoice.amountDue).toBeCloseTo(700, 2);
+  });
+
+  it('a PAID invoice is never marked OVERDUE even after its due date passes', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 250, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 250,
+      referenceId: uniqueSlug('overdue-paid-ref'),
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.approvePayment(payment.id, admin.id);
+
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { dueDate: new Date(Date.now() - 1000) } });
+    const detail = await invoiceService.getInvoiceDetail(storeId, invoice.id);
+    expect(detail.invoice.status).toBe('PAID');
+  });
+
+  it('crossing into OVERDUE notifies every active Master Admin exactly once (reuses the existing Notification system)', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 600, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { dueDate: new Date(Date.now() - 1000) } });
+
+    const admin = await masterAdminActor();
+    const before = await prisma.notification.count({
+      where: { userId: admin.id, type: 'INVOICE_OVERDUE', body: { contains: invoice.invoiceNumber } },
+    });
+
+    await invoiceService.getInvoiceDetail(storeId, invoice.id); // first read: triggers the transition
+    await invoiceService.getInvoiceDetail(storeId, invoice.id); // second read: already OVERDUE, must not re-notify
+
+    const after = await prisma.notification.count({
+      where: { userId: admin.id, type: 'INVOICE_OVERDUE', body: { contains: invoice.invoiceNumber } },
+    });
+    expect(after - before).toBe(1);
+  });
+});
+
+describe.skipIf(!hasDatabase)('Confirmed revenue split (subscription vs. platform fee, PAID-only)', () => {
+  it('getPlatformBillingSummary\'s confirmed revenue matches the sum of actually-approved payments, never unpaid invoice totals', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 800, platformFeeAmount: 200 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+
+    const before = await invoiceService.getPlatformBillingSummary();
+
+    // Fully pay this invoice — subscriptionAmount:platformFeeAmount is 800:200 (4:1),
+    // so the entire 1000 settled should split 800/200 exactly.
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 1000,
+      referenceId: uniqueSlug('revenue-split-ref'),
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.approvePayment(payment.id, admin.id);
+
+    const after = await invoiceService.getPlatformBillingSummary();
+    expect(after.confirmedSubscriptionRevenue - before.confirmedSubscriptionRevenue).toBeCloseTo(800, 2);
+    expect(after.confirmedPlatformFeeRevenue - before.confirmedPlatformFeeRevenue).toBeCloseTo(200, 2);
+
+    // An unpaid invoice from a second store must NOT move the confirmed total at all.
+    const { storeId: storeB } = await makeStore();
+    const periodB = await makeClosedPeriod(storeB, { subscriptionPrice: 5000, platformFeeAmount: 5000 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeB);
+    const afterUnpaidInvoice = await invoiceService.getPlatformBillingSummary();
+    expect(afterUnpaidInvoice.confirmedSubscriptionRevenue).toBeCloseTo(after.confirmedSubscriptionRevenue, 2);
+    expect(afterUnpaidInvoice.confirmedPlatformFeeRevenue).toBeCloseTo(after.confirmedPlatformFeeRevenue, 2);
+    // But the huge unpaid invoice IS reflected in outstanding, proving the
+    // two figures are never conflated into one number.
+    expect(afterUnpaidInvoice.totalOutstanding).toBeGreaterThanOrEqual(10000);
+  });
+
+  it('a partially-paid invoice prorates its settled amount across subscription/fee using its own split', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 600, platformFeeAmount: 400 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+
+    const before = await invoiceService.getPlatformBillingSummary();
+    // Half the invoice (500 of 1000) is paid — 60% subscription / 40% fee,
+    // so 300 should land as subscription and 200 as platform fee.
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 500,
+      referenceId: uniqueSlug('proration-ref'),
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.approvePayment(payment.id, admin.id);
+
+    const after = await invoiceService.getPlatformBillingSummary();
+    expect(after.confirmedSubscriptionRevenue - before.confirmedSubscriptionRevenue).toBeCloseTo(300, 2);
+    expect(after.confirmedPlatformFeeRevenue - before.confirmedPlatformFeeRevenue).toBeCloseTo(200, 2);
+  });
+});
+
+describe.skipIf(!hasDatabase)('Platform-wide payment history (listAllPayments)', () => {
+  it('returns real payment records across every status and store, with the verifying admin\'s name joined', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 450, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    const referenceId = uniqueSlug('history-ref');
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 450,
+      referenceId,
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.approvePayment(payment.id, admin.id);
+
+    const list = await merchantPaymentService.listAllPayments({ storeId, limit: 10 });
+    const found = list.items.find((p) => p.referenceId === referenceId);
+    expect(found).toBeTruthy();
+    expect(found!.status).toBe('APPROVED');
+    expect(found!.amount).toBeCloseTo(450, 2);
+    expect(found!.store.id).toBe(storeId);
+    expect(found!.invoice.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(found!.verifiedBy?.id).toBe(admin.id);
+  });
+
+  it('filters by status — a rejected claim never shows up when filtering for APPROVED', async () => {
+    const { storeId } = await makeStore();
+    const period = await makeClosedPeriod(storeId, { subscriptionPrice: 350, platformFeeAmount: 0 });
+    await invoiceService.ensureInvoicesForClosedPeriods(storeId);
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { billingPeriodId: period.id } });
+    const referenceId = uniqueSlug('history-rejected-ref');
+    const payment = await merchantPaymentService.submitPaymentClaim(storeId, {
+      invoiceId: invoice.id,
+      method: 'MANUAL_BKASH',
+      amount: 350,
+      referenceId,
+      transferDate: new Date(),
+    });
+    const admin = await masterAdminActor();
+    await merchantPaymentService.rejectPayment(payment.id, admin.id, 'Test rejection for filter check');
+
+    const approvedOnly = await merchantPaymentService.listAllPayments({ storeId, status: 'APPROVED', limit: 10 });
+    expect(approvedOnly.items.some((p) => p.referenceId === referenceId)).toBe(false);
+
+    const rejectedOnly = await merchantPaymentService.listAllPayments({ storeId, status: 'REJECTED', limit: 10 });
+    expect(rejectedOnly.items.some((p) => p.referenceId === referenceId)).toBe(true);
   });
 });

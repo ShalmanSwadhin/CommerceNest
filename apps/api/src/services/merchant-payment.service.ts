@@ -1,3 +1,4 @@
+import type { Prisma } from '@commercenest/prisma';
 import { ApiErrorCode, MerchantPaymentStatus, InvoiceStatus } from '@commercenest/types';
 import { prisma, isUniqueConstraintError } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
@@ -5,7 +6,7 @@ import { withStoreLock } from './subscription.service.js';
 import { toDecimal, bookMerchantPaymentReceived } from './billing.service.js';
 import { applyVerifiedPaymentToInvoice, serializeMerchantPayment } from './invoice.service.js';
 import { toNumber } from './order.service.js';
-import { notifyMasterAdmins } from './notification.service.js';
+import { notifyMasterAdmins, notifyStoreStaff } from './notification.service.js';
 
 // ---------------------------------------------------------------------------
 // Merchant → CommerceNest payment claims (manual bKash / bank transfer only
@@ -137,6 +138,61 @@ export async function listPendingPayments(params: { page?: number; limit?: numbe
   };
 }
 
+/**
+ * Platform-wide payment history, any status — genuinely new: the existing
+ * `/merchant-payments/pending` view only ever shows PENDING_VERIFICATION
+ * (approved/rejected claims disappear from it once acted on), and the only
+ * all-statuses view was per-store (getStoreMerchantPayments on
+ * StoreDetailPage). This is the cross-store drill-down Master Admin had no
+ * way to see before: "who paid us, how much, when, verified by whom."
+ */
+export async function listAllPayments(
+  params: { page?: number; limit?: number; storeId?: string; status?: string } = {},
+) {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 20;
+  const where: Prisma.MerchantPaymentWhereInput = {
+    ...(params.storeId ? { storeId: params.storeId } : {}),
+    ...(params.status ? { status: params.status as MerchantPaymentStatus } : {}),
+  };
+  const [items, total] = await Promise.all([
+    prisma.merchantPayment.findMany({
+      where,
+      include: {
+        store: { select: { id: true, name: true, slug: true } },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            billingPeriod: { select: { periodStart: true, periodEnd: true } },
+          },
+        },
+        verifiedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { submittedAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.merchantPayment.count({ where }),
+  ]);
+  return {
+    items: items.map((p) => ({
+      ...serializeMerchantPayment(p),
+      store: p.store,
+      invoice: {
+        id: p.invoice.id,
+        invoiceNumber: p.invoice.invoiceNumber,
+        periodStart: p.invoice.billingPeriod.periodStart,
+        periodEnd: p.invoice.billingPeriod.periodEnd,
+      },
+      verifiedBy: p.verifiedBy,
+    })),
+    total,
+    page,
+    limit,
+  };
+}
+
 export async function approvePayment(paymentId: string, verifiedById: string) {
   const existing = await prisma.merchantPayment.findUnique({ where: { id: paymentId } });
   if (!existing) throw AppError.notFound('Payment claim not found');
@@ -181,6 +237,21 @@ export async function approvePayment(paymentId: string, verifiedById: string) {
       },
     });
     return serializeMerchantPayment(updated);
+  }).then(async (result) => {
+    // Best-effort, outside the financial transaction — closes the loop
+    // submitPaymentClaim opened (Master Admin got told a claim came IN;
+    // this tells the store it was ACCEPTED). Never blocks/fails the
+    // approval itself if the notification write has a problem.
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: result.invoiceId },
+      select: { invoiceNumber: true },
+    });
+    await notifyStoreStaff(result.storeId, {
+      type: 'MERCHANT_PAYMENT_APPROVED',
+      title: 'Payment approved',
+      body: `Your ${result.method === 'MANUAL_BKASH' ? 'bKash' : 'bank transfer'} payment of ${result.amount.toFixed(2)} for invoice ${invoice?.invoiceNumber ?? result.invoiceId} was approved.`,
+    }).catch(() => undefined);
+    return result;
   });
 }
 
@@ -212,5 +283,19 @@ export async function rejectPayment(paymentId: string, verifiedById: string, rej
       },
     });
     return serializeMerchantPayment(updated);
+  }).then(async (result) => {
+    // Same loop-closing as approvePayment above — the merchant needs to
+    // know a claim was rejected AND why, not just silently see it vanish
+    // from "pending" the next time they check.
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: result.invoiceId },
+      select: { invoiceNumber: true },
+    });
+    await notifyStoreStaff(result.storeId, {
+      type: 'MERCHANT_PAYMENT_REJECTED',
+      title: 'Payment rejected',
+      body: `Your ${result.method === 'MANUAL_BKASH' ? 'bKash' : 'bank transfer'} payment claim of ${result.amount.toFixed(2)} for invoice ${invoice?.invoiceNumber ?? result.invoiceId} was rejected. Reason: ${result.rejectionReason ?? 'No reason was provided.'}`,
+    }).catch(() => undefined);
+    return result;
   });
 }

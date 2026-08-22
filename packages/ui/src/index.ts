@@ -74,6 +74,8 @@ export type { KpiCardProps } from './components/KpiCard';
 
 export { AreaChart } from './components/AreaChart';
 export type { AreaChartProps, AreaChartPoint } from './components/AreaChart';
+export { BarChart } from './components/BarChart';
+export type { BarChartProps, BarChartPoint } from './components/BarChart';
 
 export { Modal } from './components/Modal';
 export type { ModalProps } from './components/Modal';

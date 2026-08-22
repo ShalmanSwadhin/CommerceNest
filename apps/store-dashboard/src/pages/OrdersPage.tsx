@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
@@ -114,6 +114,7 @@ export function OrdersPage() {
   const [trackingId, setTrackingId] = useState('');
   const [courierName, setCourierName] = useState('');
   const [courierNotes, setCourierNotes] = useState('');
+  const [nextStatus, setNextStatus] = useState('');
 
   const q = useQuery({
     queryKey: ['store', storeId, 'orders', status],
@@ -130,6 +131,13 @@ export function OrdersPage() {
 
   const order = detailQ.data || selected;
   const rows = useMemo(() => unwrapList(q.data), [q.data]);
+
+  // Keeps the dropdown's selection in sync with THIS order's own
+  // server-computed allowedStatusTransitions — resets whenever a different
+  // order is opened, or after a transition changes what's legal next.
+  useEffect(() => {
+    setNextStatus(order?.allowedStatusTransitions?.[0] ?? '');
+  }, [order?.id, order?.status]);
 
   const shipmentQ = useQuery({
     queryKey: ['store', storeId, 'shipment', selected?.id],
@@ -162,10 +170,13 @@ export function OrdersPage() {
   });
 
   const codMut = useMutation({
-    mutationFn: () =>
-      storeApi.confirmCod(storeId!, order!.id, {
-        codConfirmedByCall: true,
-      }),
+    // The route itself (POST /orders/:orderId/confirm-cod) IS the "confirm
+    // by call" action — the backend sets codConfirmedByCall unconditionally
+    // when it's hit, it never reads that field from the body. The body
+    // schema (confirmCodCallBodySchema, .strict()) only accepts an optional
+    // codCallNote/overrideReason; sending codConfirmedByCall here was
+    // rejected with "Unrecognized key(s) in object: 'codConfirmedByCall'".
+    mutationFn: () => storeApi.confirmCod(storeId!, order!.id, {}),
     onSuccess: () => {
       toast({ title: 'COD confirmed', tone: 'success' });
       invalidate();
@@ -281,22 +292,22 @@ export function OrdersPage() {
           state={rows.length ? 'ready' : 'empty'}
           emptyTitle="No orders"
           emptyDescription="Orders placed on the storefront will appear here."
+          onRowClick={(r) => {
+            setSelected(r);
+            setTrackingId(r.courierTrackingId || '');
+            setCourierName(r.courierName || '');
+            setCourierNotes(r.courierNotes || '');
+          }}
           columns={[
             {
               key: 'number',
               header: 'Order ID',
+              // Still its own element (not the whole cell) so it reads as a
+              // link and stays a real keyboard-focusable control — DataTable's
+              // onRowClick ignores clicks that land on it (or any other
+              // button/link/input in the row) rather than double-firing.
               cell: (r) => (
-                <button
-                  className="font-medium text-primary"
-                  onClick={() => {
-                    setSelected(r);
-                    setTrackingId(r.courierTrackingId || '');
-                    setCourierName(r.courierName || '');
-                    setCourierNotes(r.courierNotes || '');
-                  }}
-                >
-                  {r.orderNumber || r.id.slice(0, 8)}
-                </button>
+                <span className="font-medium text-primary">{r.orderNumber || r.id.slice(0, 8)}</span>
               ),
             },
             {
@@ -388,23 +399,38 @@ export function OrdersPage() {
               <FormField label="Courier tracking (for Shipped)" htmlFor="tracking">
                 <Input id="tracking" value={trackingId} onChange={(e) => setTrackingId(e.target.value)} />
               </FormField>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {(order.allowedStatusTransitions ?? []).length === 0 ? (
                   <span className="text-sm text-ink-tertiary">
                     No further status changes are available for this order.
                   </span>
                 ) : (
-                  (order.allowedStatusTransitions ?? []).map((s) => (
+                  <>
+                    {/* Options are exactly order.allowedStatusTransitions — the
+                        same server-computed state machine (ORDER_TRANSITIONS)
+                        that used to drive one button per legal transition, so
+                        this can never offer a status the backend would reject. */}
+                    <select
+                      className="h-9 rounded-cn border border-[var(--cn-color-border-input)] bg-surface-base px-3 text-sm"
+                      value={nextStatus}
+                      onChange={(e) => setNextStatus(e.target.value)}
+                    >
+                      {(order.allowedStatusTransitions ?? []).map((s) => (
+                        <option key={s} value={s}>
+                          Mark {s}
+                        </option>
+                      ))}
+                    </select>
                     <Button
-                      key={s}
                       size="sm"
                       variant="secondary"
                       loading={statusMut.isPending}
-                      onClick={() => statusMut.mutate(s)}
+                      disabled={!nextStatus}
+                      onClick={() => statusMut.mutate(nextStatus)}
                     >
-                      Mark {s}
+                      Update status
                     </Button>
-                  ))
+                  </>
                 )}
               </div>
             </div>

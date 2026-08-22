@@ -6,6 +6,8 @@ import {
   Card,
   DataTable,
   FormField,
+  Input,
+  Modal,
   Textarea,
   useToast,
 } from '@commercenest/ui';
@@ -14,11 +16,20 @@ import { adminApi, ApiClientError, unwrapList } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { ErrorState, PageSkeleton, SoftEmpty } from '../components/QueryState';
 
+const themeRequestStatusTone: Record<string, 'caution' | 'success' | 'danger' | 'neutral'> = {
+  PENDING: 'caution',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+  COMPLETED: 'neutral',
+};
+
 export function SupportPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reply, setReply] = useState('');
+  const [rejectingThemeRequest, setRejectingThemeRequest] = useState(false);
+  const [themeRejectReason, setThemeRejectReason] = useState('');
 
   const q = useQuery({
     queryKey: ['admin', 'support-tickets'],
@@ -54,6 +65,55 @@ export function SupportPage() {
       toast({ title: 'Ticket updated', tone: 'success' });
       void qc.invalidateQueries({ queryKey: ['admin', 'support-tickets'] });
       void qc.invalidateQueries({ queryKey: ['admin', 'support-tickets', selectedId] });
+    },
+    onError: (err) =>
+      toast({
+        title: 'Update failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const invalidateTicket = () => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'support-tickets'] });
+    void qc.invalidateQueries({ queryKey: ['admin', 'support-tickets', selectedId] });
+  };
+
+  const approveThemeMut = useMutation({
+    mutationFn: () => adminApi.approveThemeRequest(selectedId!),
+    onSuccess: () => {
+      toast({ title: 'Theme request approved — store notified', tone: 'success' });
+      invalidateTicket();
+    },
+    onError: (err) =>
+      toast({
+        title: 'Approve failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const rejectThemeMut = useMutation({
+    mutationFn: () => adminApi.rejectThemeRequest(selectedId!, themeRejectReason.trim()),
+    onSuccess: () => {
+      toast({ title: 'Theme request rejected — store notified', tone: 'caution' });
+      setRejectingThemeRequest(false);
+      setThemeRejectReason('');
+      invalidateTicket();
+    },
+    onError: (err) =>
+      toast({
+        title: 'Reject failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  const completeThemeMut = useMutation({
+    mutationFn: () => adminApi.completeThemeRequest(selectedId!),
+    onSuccess: () => {
+      toast({ title: 'Marked complete — store notified', tone: 'success' });
+      invalidateTicket();
     },
     onError: (err) =>
       toast({
@@ -119,7 +179,14 @@ export function SupportPage() {
                 {
                   key: 'status',
                   header: 'Status',
-                  cell: (r) => <Badge tone="info">{r.status || 'OPEN'}</Badge>,
+                  cell: (r) =>
+                    r.themeRequestStatus ? (
+                      <Badge tone={themeRequestStatusTone[r.themeRequestStatus] ?? 'neutral'}>
+                        {r.themeRequestStatus}
+                      </Badge>
+                    ) : (
+                      <Badge tone="info">{r.status || 'OPEN'}</Badge>
+                    ),
                 },
                 {
                   key: 'created',
@@ -149,9 +216,50 @@ export function SupportPage() {
                 <h3 className="text-lg font-semibold">{detailQ.data?.subject}</h3>
                 <p className="text-sm text-ink-secondary">
                   {detailQ.data?.store?.name || detailQ.data?.storeId} ·{' '}
-                  {detailQ.data?.status}
+                  {detailQ.data?.themeRequestStatus ?? detailQ.data?.status}
                 </p>
               </div>
+              {detailQ.data?.themeRequestStatus ? (
+                // Theme customization request — approve/reject is a DECISION
+                // about whether Master Admin will do the work, distinct from
+                // the generic OPEN/IN_PROGRESS/RESOLVED/CLOSED ticket
+                // lifecycle below (which stays available too, since this is
+                // still a real support ticket underneath). Approving/
+                // rejecting never touches theme data — that still happens
+                // manually afterward via Theme Builder / Theme Builder Pro.
+                <div className="flex flex-wrap gap-2">
+                  {detailQ.data.themeRequestStatus === 'PENDING' ? (
+                    <>
+                      <Button
+                        size="sm"
+                        loading={approveThemeMut.isPending}
+                        onClick={() => approveThemeMut.mutate()}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setRejectingThemeRequest(true)}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : detailQ.data.themeRequestStatus === 'APPROVED' ? (
+                    <Button
+                      size="sm"
+                      loading={completeThemeMut.isPending}
+                      onClick={() => completeThemeMut.mutate()}
+                    >
+                      Mark completed
+                    </Button>
+                  ) : (
+                    <span className="text-sm text-ink-tertiary">
+                      This request has been {detailQ.data.themeRequestStatus.toLowerCase()}.
+                    </span>
+                  )}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 {['IN_PROGRESS', 'RESOLVED', 'CLOSED'].map((status) => (
                   <Button
@@ -198,6 +306,36 @@ export function SupportPage() {
           )}
         </Card>
       </div>
+
+      <Modal
+        open={rejectingThemeRequest}
+        onClose={() => setRejectingThemeRequest(false)}
+        title="Reject theme customization request"
+        description="The store will be notified with this reason."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRejectingThemeRequest(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={rejectThemeMut.isPending}
+              disabled={!themeRejectReason.trim()}
+              onClick={() => rejectThemeMut.mutate()}
+            >
+              Reject
+            </Button>
+          </>
+        }
+      >
+        <FormField label="Reason" htmlFor="theme-reject-reason" required>
+          <Input
+            id="theme-reject-reason"
+            value={themeRejectReason}
+            onChange={(e) => setThemeRejectReason(e.target.value)}
+          />
+        </FormField>
+      </Modal>
     </div>
   );
 }

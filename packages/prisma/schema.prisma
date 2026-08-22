@@ -131,6 +131,7 @@ enum StorefrontVersionStatus {
 
 enum MediaUsageType {
   PRODUCT_IMAGE
+  CATEGORY_IMAGE
   STORE_LOGO
   STORE_BANNER
   CMS_ASSET
@@ -152,6 +153,13 @@ enum SupportTicketStatus {
   WAITING_ON_CUSTOMER
   RESOLVED
   CLOSED
+}
+
+enum ThemeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
 }
 
 enum SupportTicketPriority {
@@ -513,6 +521,11 @@ model Category {
   name            String
   slug            String
   parentId        String?
+  /// Merchant-set representative image. When absent, the storefront falls
+  /// back to a photo derived from the category's own oldest active product
+  /// (see storefront.routes.ts GET /categories) — this field takes
+  /// priority over that derivation when set, it doesn't replace it.
+  imageUrl        String?
   seoTitle        String?
   seoDescription  String?  @db.Text
   createdAt       DateTime @default(now())
@@ -1086,6 +1099,17 @@ model SupportTicket {
   subject     String
   status      SupportTicketStatus   @default(OPEN)
   priority    SupportTicketPriority @default(NORMAL)
+  /// Null for every ordinary support ticket — only ever set for tickets
+  /// created via POST /theme/customization-request (see store.routes.ts).
+  /// Deliberately a separate field from `status` above: "approved, Master
+  /// Admin will make the changes" vs. "rejected" is a decision this ticket
+  /// TYPE needs to express, but forcing it into SupportTicketStatus's
+  /// existing OPEN/IN_PROGRESS/WAITING_ON_CUSTOMER/RESOLVED/CLOSED
+  /// vocabulary would redefine what those values mean for every other
+  /// (non-theme) ticket too. `status` is still kept in sync alongside this
+  /// (APPROVED -> IN_PROGRESS, REJECTED -> CLOSED) so the generic ticket
+  /// list/detail view still shows something sensible either way.
+  themeRequestStatus ThemeRequestStatus?
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
 
@@ -1096,6 +1120,7 @@ model SupportTicket {
   @@index([storeId, status])
   @@index([storeId, createdAt])
   @@index([requesterId])
+  @@index([themeRequestStatus])
   @@map("support_tickets")
 }
 

@@ -15,6 +15,7 @@ import {
   type Decimal,
 } from './billing.service.js';
 import { toNumber } from './order.service.js';
+import { notifyMasterAdmins, notifyStoreStaff } from './notification.service.js';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -45,6 +46,36 @@ export async function setInvoicePaymentTermDays(days: number) {
   return prisma.platformSettings.upsert({
     where: { key: PAYMENT_TERM_SETTING_KEY },
     create: { key: PAYMENT_TERM_SETTING_KEY, value: parsed },
+    update: { value: parsed },
+  });
+}
+
+/**
+ * Grace period: how many days an invoice may sit OVERDUE before it's
+ * eligible for further action (Part 4's manual suspension-eligibility
+ * list). Read-only informational for now — nothing acts on this value
+ * automatically. Same PlatformSettings-backed pattern as
+ * getInvoicePaymentTermDays above, not a new config system.
+ */
+const DEFAULT_OVERDUE_GRACE_DAYS = 14;
+const OVERDUE_GRACE_SETTING_KEY = 'billing.overdueGraceDays';
+
+export async function getOverdueGraceDays(): Promise<number> {
+  const setting = await prisma.platformSettings.findUnique({
+    where: { key: OVERDUE_GRACE_SETTING_KEY },
+  });
+  const value = setting?.value;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  return DEFAULT_OVERDUE_GRACE_DAYS;
+}
+
+export async function setOverdueGraceDays(days: number) {
+  const parsed = z.number().int().min(1).max(180).parse(days);
+  return prisma.platformSettings.upsert({
+    where: { key: OVERDUE_GRACE_SETTING_KEY },
+    create: { key: OVERDUE_GRACE_SETTING_KEY, value: parsed },
     update: { value: parsed },
   });
 }
@@ -255,19 +286,50 @@ async function recomputeInvoiceStatus(db: Db, invoiceId: string) {
   return db.invoice.update({ where: { id: invoiceId }, data: { status: newStatus } });
 }
 
-/** Lazy OVERDUE transition, mirroring BillingPeriod's own lazy-rollover
+/**
+ * Lazy OVERDUE transition, mirroring BillingPeriod's own lazy-rollover
  * philosophy — checked whenever an invoice is read for display, not on a
- * clock. Preserves any extra fields already present on `invoice` (e.g. a
- * joined `store`) by only touching `.status` on the returned object. */
-async function syncOverdueStatus<T extends { id: string; status: string; dueDate: Date }>(
-  db: Db,
-  invoice: T,
-): Promise<T> {
+ * clock (this codebase has no scheduled-job infrastructure — see
+ * COURIER_ARCHITECTURE.md-style comments elsewhere for why lazy-on-read is
+ * the established pattern here, not a new one invented for this). Preserves
+ * any extra fields already present on `invoice` (e.g. a joined `store`) by
+ * only touching `.status` on the returned object.
+ *
+ * Fires notifications exactly once per invoice, at the moment of the
+ * actual transition (not on every subsequent read of an invoice already
+ * OVERDUE) — to BOTH Master Admin (as before) and that store's own
+ * STORE_OWNER/STORE_MANAGER staff (new), reusing the same
+ * notifyMasterAdmins/notifyStoreStaff/Notification/NotificationBell
+ * system, no new channel. Detection speed depends on someone opening a
+ * page that reads this invoice — Master Admin's Billing page reads every
+ * invoice platform-wide, and the merchant's own Billing page reads
+ * theirs, so either side opening their dashboard is enough to catch a
+ * newly-overdue invoice, but there is no guaranteed-immediate delivery
+ * the moment an invoice technically crosses its due date if nobody opens
+ * either page (see COURIER_ARCHITECTURE-style honesty: this is a stated
+ * limitation of computed-on-read, not a hidden one).
+ */
+async function syncOverdueStatus<
+  T extends { id: string; status: string; dueDate: Date; storeId: string; invoiceNumber: string; totalAmount: unknown },
+>(db: Db, invoice: T): Promise<T> {
   if (
     (invoice.status === InvoiceStatus.ISSUED || invoice.status === InvoiceStatus.PARTIALLY_PAID) &&
     invoice.dueDate.getTime() < Date.now()
   ) {
     await db.invoice.update({ where: { id: invoice.id }, data: { status: InvoiceStatus.OVERDUE } });
+    const store = await db.store.findUnique({ where: { id: invoice.storeId }, select: { name: true } });
+    const amount = toNumber(invoice.totalAmount as never).toFixed(2);
+    await notifyMasterAdmins({
+      type: 'INVOICE_OVERDUE',
+      title: 'Invoice overdue',
+      body: `${store?.name ?? 'A store'}'s invoice ${invoice.invoiceNumber} (${amount}) is now overdue.`,
+      storeId: invoice.storeId,
+    }).catch(() => undefined);
+    await notifyStoreStaff(invoice.storeId, {
+      type: 'INVOICE_OVERDUE',
+      title: 'Your invoice is overdue',
+      body: `Invoice ${invoice.invoiceNumber} (${amount}) is past its due date. Please submit payment to keep your account in good standing.`,
+    }).catch(() => undefined);
     return { ...invoice, status: InvoiceStatus.OVERDUE };
   }
   return invoice;
@@ -571,13 +633,55 @@ export async function listAllInvoices(
   return { items: synced.map(serializeInvoice), total, page, limit };
 }
 
+/**
+ * Splits confirmed (actually-settled) revenue into subscription vs.
+ * platform-fee, matching Invoice.subscriptionAmount/platformFeeAmount.
+ * amountPaid+creditApplied is a single blended figure — the schema has no
+ * per-payment allocation between the two components — so each invoice's
+ * settled amount is prorated across its own subscription:fee split. This
+ * collapses to the exact full amounts for a PAID invoice and to 0 for an
+ * invoice with nothing settled yet; only a PARTIALLY_PAID invoice is a true
+ * proration, and it's an honest one (same ratio the invoice itself was
+ * built from), not an estimate pulled from elsewhere.
+ */
+async function getConfirmedRevenueSplit() {
+  const invoices = await prisma.invoice.findMany({
+    select: {
+      subscriptionAmount: true,
+      platformFeeAmount: true,
+      totalAmount: true,
+      amountPaid: true,
+      creditApplied: true,
+    },
+  });
+  let subscriptionRevenue = ZERO;
+  let platformFeeRevenue = ZERO;
+  for (const inv of invoices) {
+    const total = toDecimal(inv.totalAmount);
+    if (total.lte(0)) continue;
+    const settled = Prisma.Decimal.min(
+      toDecimal(inv.amountPaid).plus(toDecimal(inv.creditApplied)),
+      total,
+    );
+    if (settled.lte(0)) continue;
+    const ratio = settled.div(total);
+    subscriptionRevenue = subscriptionRevenue.plus(toDecimal(inv.subscriptionAmount).mul(ratio));
+    platformFeeRevenue = platformFeeRevenue.plus(toDecimal(inv.platformFeeAmount).mul(ratio));
+  }
+  return {
+    confirmedSubscriptionRevenue: roundMoney(subscriptionRevenue).toNumber(),
+    confirmedPlatformFeeRevenue: roundMoney(platformFeeRevenue).toNumber(),
+  };
+}
+
 export async function getPlatformBillingSummary() {
   await ensureInvoicesForAllClosedPeriods();
-  const [invoiceAgg, overdueCount, pendingPaymentsCount, creditAgg] = await Promise.all([
+  const [invoiceAgg, overdueCount, pendingPaymentsCount, creditAgg, revenueSplit] = await Promise.all([
     prisma.invoice.aggregate({ _sum: { totalAmount: true, amountPaid: true, creditApplied: true } }),
     prisma.invoice.count({ where: { status: InvoiceStatus.OVERDUE } }),
     prisma.merchantPayment.count({ where: { status: 'PENDING_VERIFICATION' } }),
     prisma.billingLedgerEntry.aggregate({ where: { type: 'CREDIT' }, _sum: { amount: true } }),
+    getConfirmedRevenueSplit(),
   ]);
   const totalInvoiced = toDecimal(invoiceAgg._sum.totalAmount ?? 0);
   const totalCollected = toDecimal(invoiceAgg._sum.amountPaid ?? 0);
@@ -594,5 +698,83 @@ export async function getPlatformBillingSummary() {
     totalMerchantCredit: totalMerchantCredit.toNumber(),
     pendingPaymentClaims: pendingPaymentsCount,
     overdueInvoices: overdueCount,
+    ...revenueSplit,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Suspension eligibility — MANUAL review list only. This computes who
+// *could* be suspended for being significantly overdue; it never suspends
+// anyone itself. Master Admin reviews this list and clicks "Suspend" on a
+// store one at a time, which goes through the existing
+// storeService.suspendStore() (unchanged) via the existing
+// POST /stores/:id/suspend route. No automatic action lives here.
+// ---------------------------------------------------------------------------
+
+export interface SuspensionEligibleStore {
+  storeId: string;
+  storeName: string;
+  storeSlug: string;
+  storeStatus: string;
+  totalOverdue: number;
+  daysOverdue: number;
+  invoiceNumbers: string[];
+}
+
+export async function getSuspensionEligibleStores(): Promise<SuspensionEligibleStore[]> {
+  const graceDays = await getOverdueGraceDays();
+  const cutoff = new Date(Date.now() - graceDays * 24 * 60 * 60 * 1000);
+
+  const overdueInvoices = await prisma.invoice.findMany({
+    where: { status: InvoiceStatus.OVERDUE, dueDate: { lte: cutoff } },
+    include: { store: { select: { id: true, name: true, slug: true, status: true } } },
+    orderBy: { dueDate: 'asc' },
+  });
+
+  const byStore = new Map<
+    string,
+    {
+      store: { id: string; name: string; slug: string; status: string };
+      totalOverdue: Decimal;
+      oldestDueDate: Date;
+      invoiceNumbers: string[];
+    }
+  >();
+
+  for (const inv of overdueInvoices) {
+    // A store already SUSPENDED/ARCHIVED isn't "eligible for suspension" —
+    // that action already happened (or the store no longer operates).
+    if (inv.store.status === 'SUSPENDED' || inv.store.status === 'ARCHIVED') continue;
+
+    const amountDue = Prisma.Decimal.max(
+      toDecimal(inv.totalAmount).minus(toDecimal(inv.amountPaid)).minus(toDecimal(inv.creditApplied)),
+      ZERO,
+    );
+    const existing = byStore.get(inv.storeId);
+    if (existing) {
+      existing.totalOverdue = existing.totalOverdue.plus(amountDue);
+      if (inv.dueDate.getTime() < existing.oldestDueDate.getTime()) existing.oldestDueDate = inv.dueDate;
+      existing.invoiceNumbers.push(inv.invoiceNumber);
+    } else {
+      byStore.set(inv.storeId, {
+        store: inv.store,
+        totalOverdue: amountDue,
+        oldestDueDate: inv.dueDate,
+        invoiceNumbers: [inv.invoiceNumber],
+      });
+    }
+  }
+
+  const now = Date.now();
+  return Array.from(byStore.values())
+    .map((e) => ({
+      storeId: e.store.id,
+      storeName: e.store.name,
+      storeSlug: e.store.slug,
+      storeStatus: e.store.status,
+      totalOverdue: roundMoney(e.totalOverdue).toNumber(),
+      daysOverdue: Math.floor((now - e.oldestDueDate.getTime()) / (24 * 60 * 60 * 1000)),
+      invoiceNumbers: e.invoiceNumbers,
+    }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue);
 }

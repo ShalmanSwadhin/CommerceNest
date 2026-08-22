@@ -33,6 +33,13 @@ export function DashboardPage() {
     queryKey: ['admin', 'summary'],
     queryFn: () => adminApi.summary(),
   });
+  // Confirmed platform billing revenue (subscription + fee actually paid)
+  // — a different figure from the order-GMV KPI below, fetched separately
+  // since it comes from the billing system, not analytics.
+  const billingQ = useQuery({
+    queryKey: ['admin', 'billing', 'summary'],
+    queryFn: () => adminApi.getBillingSummary(),
+  });
 
   if (q.isLoading) return <PageSkeleton />;
   if (q.isError) {
@@ -48,6 +55,9 @@ export function DashboardPage() {
   const series = data.revenueSeries ?? [];
   const topStores = data.topStores ?? [];
   const activity = data.recentActivity ?? [];
+  const confirmedRevenue = billingQ.data
+    ? billingQ.data.confirmedSubscriptionRevenue + billingQ.data.confirmedPlatformFeeRevenue
+    : null;
 
   return (
     <div className="space-y-6">
@@ -61,7 +71,7 @@ export function DashboardPage() {
         <Badge tone="info">Live API data</Badge>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCard
           label="Total Stores"
           value={formatNumber(data.totalStores)}
@@ -74,11 +84,22 @@ export function DashboardPage() {
           change={{ value: 'Currently selling', trend: 'up' }}
           icon={<Activity />}
         />
+        {/* Was labeled "Platform Revenue" — that's customer→merchant order
+            GMV (order.total across CONFIRMED/PROCESSING/SHIPPED/DELIVERED
+            orders), not money CommerceNest has actually collected. Relabeled
+            to say what it is; the real confirmed billing revenue is the
+            next card. */}
         <KpiCard
-          label="Platform Revenue"
+          label="Order Volume (GMV)"
           value={formatBdt(data.platformRevenue)}
           change={{ value: 'Recognized orders', trend: 'up' }}
           icon={<Wallet />}
+        />
+        <KpiCard
+          label="Confirmed Revenue"
+          value={confirmedRevenue !== null ? formatBdt(confirmedRevenue) : '—'}
+          change={{ value: 'Subscription + fees actually paid', trend: 'up' }}
+          icon={<CreditCard />}
         />
         <KpiCard
           label="Total Users"

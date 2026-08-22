@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   AreaChart,
+  BarChart,
   Badge,
   Card,
   CardContent,
@@ -37,6 +38,7 @@ export function DashboardPage() {
 
   const data = q.data ?? {};
   const series = data.revenueSeries ?? [];
+  const newCustomersSeries = data.newCustomersSeries ?? [];
 
   return (
     <div className="space-y-6">
@@ -71,25 +73,66 @@ export function DashboardPage() {
           icon={<Package />}
         />
       </div>
-      <Card elevated>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle>Revenue overview</CardTitle>
-          <span className="text-xs text-ink-tertiary">Last 14 days</span>
-        </CardHeader>
-        <CardContent>
-          {series.length === 0 ? (
-            <SoftEmpty
-              title="No chart data"
-              description="Confirmed orders will appear in this revenue series."
-            />
-          ) : (
-            <AreaChart
-              points={series.map((p) => ({ label: p.date, value: p.revenue }))}
-              height={220}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card elevated>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>Revenue overview</CardTitle>
+            <span className="text-xs text-ink-tertiary">Last 14 days</span>
+          </CardHeader>
+          <CardContent>
+            {series.length === 0 ? (
+              <SoftEmpty
+                title="No chart data"
+                description="Confirmed orders will appear in this revenue series."
+              />
+            ) : (
+              <AreaChart
+                points={series.map((p) => ({ label: p.date, value: p.revenue }))}
+                height={220}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card elevated>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>Orders overview</CardTitle>
+            <span className="text-xs text-ink-tertiary">Last 14 days</span>
+          </CardHeader>
+          <CardContent>
+            {series.length === 0 ? (
+              <SoftEmpty
+                title="No chart data"
+                description="Confirmed orders will appear in this series."
+              />
+            ) : (
+              <BarChart
+                points={series.map((p) => ({ label: p.date, value: p.orders ?? 0 }))}
+                height={220}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card elevated>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>New customers</CardTitle>
+            <span className="text-xs text-ink-tertiary">Last 14 days</span>
+          </CardHeader>
+          <CardContent>
+            {newCustomersSeries.length === 0 ? (
+              <SoftEmpty
+                title="No chart data"
+                description="New customer signups will appear in this series."
+              />
+            ) : (
+              <BarChart
+                points={newCustomersSeries.map((p) => ({ label: p.date, value: p.newCustomers }))}
+                height={220}
+                color="var(--cn-color-success)"
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

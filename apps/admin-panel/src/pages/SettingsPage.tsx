@@ -38,6 +38,7 @@ export function SettingsPage() {
   const [supportEmail, setSupportEmail] = useState('');
   const [platformName, setPlatformName] = useState('CommerceNest');
   const [paymentTermDays, setPaymentTermDays] = useState('7');
+  const [overdueGraceDays, setOverdueGraceDays] = useState('14');
   const [instructions, setInstructions] = useState<PaymentInstructions>(EMPTY_PAYMENT_INSTRUCTIONS);
 
   const q = useQuery({
@@ -53,6 +54,9 @@ export function SettingsPage() {
     if (typeof map.platformName === 'string') setPlatformName(map.platformName);
     if (typeof map['billing.invoicePaymentTermDays'] === 'number') {
       setPaymentTermDays(String(map['billing.invoicePaymentTermDays']));
+    }
+    if (typeof map['billing.overdueGraceDays'] === 'number') {
+      setOverdueGraceDays(String(map['billing.overdueGraceDays']));
     }
     if (map['billing.paymentInstructions'] && typeof map['billing.paymentInstructions'] === 'object') {
       setInstructions({ ...EMPTY_PAYMENT_INSTRUCTIONS, ...(map['billing.paymentInstructions'] as Partial<PaymentInstructions>) });
@@ -78,6 +82,7 @@ export function SettingsPage() {
     mutationFn: () =>
       adminApi.updateSettings([
         { key: 'billing.invoicePaymentTermDays', value: Number(paymentTermDays) },
+        { key: 'billing.overdueGraceDays', value: Number(overdueGraceDays) },
         { key: 'billing.paymentInstructions', value: instructions },
       ]),
     onSuccess: () => toast({ title: 'Billing settings saved', tone: 'success' }),
@@ -151,6 +156,20 @@ export function SettingsPage() {
             max={90}
             value={paymentTermDays}
             onChange={(e) => setPaymentTermDays(e.target.value)}
+          />
+        </FormField>
+        <FormField
+          label="Overdue grace period (days)"
+          htmlFor="overdueGraceDays"
+          description="How many days an invoice may sit OVERDUE before it becomes eligible for suspension review on the Billing page. Informational only today — nothing suspends a store automatically."
+        >
+          <Input
+            id="overdueGraceDays"
+            type="number"
+            min={1}
+            max={180}
+            value={overdueGraceDays}
+            onChange={(e) => setOverdueGraceDays(e.target.value)}
           />
         </FormField>
         <div className="border-t border-line pt-4">

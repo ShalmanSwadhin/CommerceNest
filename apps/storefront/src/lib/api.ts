@@ -273,6 +273,8 @@ export interface AccountOrder {
   orderNumber?: string;
   status: string;
   paymentStatus?: string;
+  paymentMethod?: string;
+  bkashNote?: string | null;
   total?: number | string;
   createdAt?: string;
 }
@@ -448,6 +450,7 @@ export const storefrontApi = {
         key: string;
         title?: string | null;
         body?: string | null;
+        fields?: Record<string, unknown>;
       }>(sf(slug, `/cms/${encodeURIComponent(key)}`));
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 404) return null;

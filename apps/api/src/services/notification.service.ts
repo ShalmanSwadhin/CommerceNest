@@ -2,6 +2,25 @@ import { UserRole, UserStatus } from '@commercenest/types';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../lib/errors.js';
 
+/** Shared fan-out — every "notify this audience" helper below is a thin
+ * wrapper around this, so there is exactly one place that ever writes to
+ * the Notification model. */
+async function notifyUsers(
+  userIds: string[],
+  params: { type: string; title: string; body: string; storeId?: string | null },
+) {
+  if (userIds.length === 0) return;
+  await prisma.notification.createMany({
+    data: userIds.map((userId) => ({
+      userId,
+      storeId: params.storeId ?? null,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+    })),
+  });
+}
+
 /** Fans an in-app notification out to every active Master Admin — the only
  * "broadcast" audience V1 needs. Uses the existing Notification model
  * (previously defined in schema but never written to). */
@@ -15,17 +34,34 @@ export async function notifyMasterAdmins(params: {
     where: { role: UserRole.MASTER_ADMIN, status: UserStatus.ACTIVE },
     select: { id: true },
   });
-  if (admins.length === 0) return;
+  await notifyUsers(admins.map((a) => a.id), params);
+}
 
-  await prisma.notification.createMany({
-    data: admins.map((admin) => ({
-      userId: admin.id,
-      storeId: params.storeId ?? null,
-      type: params.type,
-      title: params.title,
-      body: params.body,
-    })),
+/**
+ * Fans a notification out to a specific store's billing-capable staff —
+ * STORE_OWNER and STORE_MANAGER, the same pair already gated as
+ * BILLING_ROLES for every invoice/merchant-payment route in
+ * store.routes.ts. Other staff roles (e.g. INVENTORY_MANAGER,
+ * CUSTOMER_SUPPORT) have no billing visibility today, so they're
+ * deliberately excluded here too — this mirrors an existing access
+ * boundary rather than inventing a new one.
+ */
+export async function notifyStoreStaff(
+  storeId: string,
+  params: { type: string; title: string; body: string },
+) {
+  const staff = await prisma.user.findMany({
+    where: {
+      storeId,
+      role: { in: [UserRole.STORE_OWNER, UserRole.STORE_MANAGER] },
+      status: UserStatus.ACTIVE,
+    },
+    select: { id: true },
   });
+  await notifyUsers(
+    staff.map((s) => s.id),
+    { ...params, storeId },
+  );
 }
 
 export async function listNotifications(

@@ -45,6 +45,7 @@ export async function createCategory(storeId: string, input: unknown) {
       name: data.name,
       slug: data.slug,
       parentId: data.parentId,
+      imageUrl: data.imageUrl || null,
       seoTitle: data.seoTitle,
       seoDescription: data.seoDescription,
     },
@@ -72,6 +73,10 @@ export async function updateCategory(
       name: data.name,
       slug: data.slug,
       parentId: data.parentId,
+      // Distinguish "field omitted, leave untouched" (undefined) from
+      // "explicitly cleared" ('' — the Remove-image case) — an omitted
+      // key must never overwrite an already-set imageUrl.
+      ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl || null } : {}),
       seoTitle: data.seoTitle,
       seoDescription: data.seoDescription,
     },

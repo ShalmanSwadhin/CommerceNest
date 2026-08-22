@@ -6,6 +6,7 @@ import { Badge, Button, Card } from '@commercenest/ui';
 import { adminApi } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { ErrorState, PageSkeleton } from '../components/QueryState';
+import { downloadCsv } from '../lib/csv';
 
 function formatBdt(amount: number) {
   return `৳${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
@@ -183,13 +184,29 @@ function StoreInvoicesCard({ storeId }: { storeId: string }) {
   const invoices = invoicesQ.data.items;
   const payments = paymentsQ.data ?? [];
 
+  const exportInvoicesCsv = () => {
+    downloadCsv(`commercenest-invoices-${storeId}.csv`, invoices, [
+      { header: 'Invoice', value: (i) => i.invoiceNumber },
+      { header: 'Issued', value: (i) => i.issueDate },
+      { header: 'Due', value: (i) => i.dueDate },
+      { header: 'Total', value: (i) => i.totalAmount },
+      { header: 'Due amount', value: (i) => i.amountDue },
+      { header: 'Status', value: (i) => invoiceStatusLabel[i.status] ?? i.status },
+    ]);
+  };
+
   return (
     <Card elevated padding="lg" className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-ink">Invoices &amp; merchant credit</h3>
-        <div className="text-right">
-          <p className="text-xs text-ink-tertiary">Credit balance</p>
-          <p className="font-semibold text-ink">{formatBdt(creditQ.data?.balance ?? 0)}</p>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs text-ink-tertiary">Credit balance</p>
+            <p className="font-semibold text-ink">{formatBdt(creditQ.data?.balance ?? 0)}</p>
+          </div>
+          <Button size="sm" variant="secondary" disabled={invoices.length === 0} onClick={exportInvoicesCsv}>
+            Export CSV
+          </Button>
         </div>
       </div>
       {invoices.length === 0 ? (
@@ -271,6 +288,130 @@ const statusTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> =
   ARCHIVED: 'neutral',
 };
 
+function orderStatusTone(status: string): 'success' | 'caution' | 'danger' | 'info' | 'neutral' {
+  if (status === 'DELIVERED') return 'success';
+  if (status === 'CANCELLED' || status === 'REFUNDED') return 'danger';
+  if (status === 'PENDING') return 'caution';
+  if (status === 'SHIPPED' || status === 'PROCESSING') return 'info';
+  return 'neutral';
+}
+
+const riskTone: Record<string, 'success' | 'caution' | 'danger' | 'neutral'> = {
+  NONE: 'success',
+  CAUTION: 'caution',
+  HIGH_RISK: 'danger',
+};
+
+/**
+ * Drill-down below the store-level aggregates above (usage/billing/
+ * invoices) into actual order records — the gap this section closes is
+ * that Master Admin previously had no way to see individual orders at all,
+ * only revenue/order-count totals. Read-only by design: order status
+ * changes stay a Store Admin action (store-dashboard's OrdersPage), this
+ * is visibility, not a second place to operate a store's fulfillment.
+ */
+function StoreOrdersCard({ storeId }: { storeId: string }) {
+  const q = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'orders'],
+    queryFn: () => adminApi.listStoreOrders(storeId, { limit: 10 }),
+  });
+  if (q.isLoading || !q.data) return null;
+  const orders = q.data.items;
+
+  return (
+    <Card elevated padding="lg" className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink">Orders</h3>
+        <span className="text-xs text-ink-tertiary">{q.data.total} total</span>
+      </div>
+      {orders.length === 0 ? (
+        <p className="text-sm text-ink-secondary">No orders yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs text-ink-tertiary">
+                <th className="pb-2 pr-4 font-medium">Order</th>
+                <th className="pb-2 pr-4 font-medium">Customer</th>
+                <th className="pb-2 pr-4 font-medium">Placed</th>
+                <th className="pb-2 pr-4 font-medium text-right">Total</th>
+                <th className="pb-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.id} className="border-t border-line">
+                  <td className="py-2 pr-4 font-medium">{o.orderNumber}</td>
+                  <td className="py-2 pr-4">{o.customer?.name || o.customer?.phone || '—'}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{formatDate(o.createdAt)}</td>
+                  <td className="py-2 pr-4 text-right">{formatBdt(o.total)}</td>
+                  <td className="py-2">
+                    <Badge tone={orderStatusTone(o.status)}>{o.status}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {q.data.total > orders.length ? (
+        <p className="text-xs text-ink-tertiary">Showing the {orders.length} most recent orders.</p>
+      ) : null}
+    </Card>
+  );
+}
+
+function StoreCustomersCard({ storeId }: { storeId: string }) {
+  const q = useQuery({
+    queryKey: ['admin', 'stores', storeId, 'customers'],
+    queryFn: () => adminApi.listStoreCustomers(storeId, { limit: 10 }),
+  });
+  if (q.isLoading || !q.data) return null;
+  const customers = q.data.items;
+
+  return (
+    <Card elevated padding="lg" className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink">Customers</h3>
+        <span className="text-xs text-ink-tertiary">{q.data.total} total</span>
+      </div>
+      {customers.length === 0 ? (
+        <p className="text-sm text-ink-secondary">No customers yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs text-ink-tertiary">
+                <th className="pb-2 pr-4 font-medium">Customer</th>
+                <th className="pb-2 pr-4 font-medium">Phone</th>
+                <th className="pb-2 pr-4 font-medium text-right">Orders</th>
+                <th className="pb-2 pr-4 font-medium text-right">Delivered</th>
+                <th className="pb-2 font-medium">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map((c) => (
+                <tr key={c.id} className="border-t border-line">
+                  <td className="py-2 pr-4 font-medium">{c.name || '—'}</td>
+                  <td className="py-2 pr-4">{c.phone}</td>
+                  <td className="py-2 pr-4 text-right">{c.totalOrders}</td>
+                  <td className="py-2 pr-4 text-right">{c.deliveredOrders}</td>
+                  <td className="py-2">
+                    <Badge tone={riskTone[c.riskLevel] ?? 'neutral'}>{c.riskLevel}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {q.data.total > customers.length ? (
+        <p className="text-xs text-ink-tertiary">Showing the {customers.length} most recent customers.</p>
+      ) : null}
+    </Card>
+  );
+}
+
 function Field({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div>
@@ -348,6 +489,8 @@ export function StoreDetailPage() {
       <StoreUsageCard storeId={store.id} />
       <StoreBillingCard storeId={store.id} />
       <StoreInvoicesCard storeId={store.id} />
+      <StoreOrdersCard storeId={store.id} />
+      <StoreCustomersCard storeId={store.id} />
 
       <Card elevated padding="lg" className="space-y-4">
         <h3 className="text-sm font-semibold text-ink">Owner</h3>

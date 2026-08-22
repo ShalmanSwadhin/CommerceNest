@@ -4,7 +4,7 @@ import { env } from '../lib/env.js';
 import { sendEmail } from '../lib/email.js';
 import { prisma } from '../lib/prisma.js';
 import { onEvent } from './emit.js';
-import { notifyMasterAdmins } from '../services/notification.service.js';
+import { notifyMasterAdmins, notifyStoreStaff } from '../services/notification.service.js';
 
 function logSmsLocally(to: string | null, body: string, templateKey: string) {
   if (!to) {
@@ -200,6 +200,15 @@ async function handleNotificationSideEffects(event: CommerceNestDomainEvent) {
         { storeId: event.payload.storeId, reason: event.payload.reason },
         'Store suspended notification',
       );
+      // Previously silent from the merchant's side — any suspension (billing
+      // or otherwise) reuses this one event/notification path, not just the
+      // new overdue-suspension flow, so a store owner is never left to
+      // discover a suspension only by their storefront going down.
+      await notifyStoreStaff(event.payload.storeId, {
+        type: 'STORE_SUSPENDED',
+        title: 'Your store has been suspended',
+        body: event.payload.reason,
+      });
       break;
     case 'TrialLeadCreated':
       await notifyMasterAdmins({

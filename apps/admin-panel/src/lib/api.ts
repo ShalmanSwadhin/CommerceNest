@@ -375,6 +375,7 @@ export interface SupportTicket {
   id: string;
   subject: string;
   status?: string;
+  themeRequestStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | null;
   storeId?: string;
   store?: { name?: string; slug?: string };
   createdAt?: string;
@@ -580,10 +581,15 @@ export const adminApi = {
       `/api/admin/payments/pending${toQuery(params)}`,
     ),
   settings: () => apiRequest<PlatformSettingsResponse>('/api/admin/settings'),
+  // Backend expects `items` as a plain { key: value } record (z.record(...)
+  // in admin.routes.ts), not an array of {key,value} pairs — an array here
+  // fails validation with "Expected object, received array".
   updateSettings: (items: Array<{ key: string; value: unknown }>) =>
     apiRequest<PlatformSettingsResponse>('/api/admin/settings', {
       method: 'PATCH',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({
+        items: Object.fromEntries(items.map(({ key, value }) => [key, value])),
+      }),
     }),
   listUsers: (params: Record<string, string | number | undefined> = {}) =>
     apiRequest<Paginated<AdminUser> | AdminUser[]>(
@@ -633,6 +639,15 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+  approveThemeRequest: (id: string) =>
+    apiRequest<SupportTicket>(`/api/admin/theme-requests/${id}/approve`, { method: 'POST' }),
+  rejectThemeRequest: (id: string, reason: string) =>
+    apiRequest<SupportTicket>(`/api/admin/theme-requests/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  completeThemeRequest: (id: string) =>
+    apiRequest<SupportTicket>(`/api/admin/theme-requests/${id}/complete`, { method: 'POST' }),
   approvePayment: (orderId: string) =>
     apiRequest<PendingPayment>(`/api/admin/payments/${orderId}/approve`, {
       method: 'POST',
@@ -719,10 +734,38 @@ export const adminApi = {
     apiRequest<{ balance: number }>(`/api/admin/stores/${storeId}/credit`),
   getStoreMerchantPayments: (storeId: string) =>
     apiRequest<MerchantPayment[]>(`/api/admin/stores/${storeId}/merchant-payments`),
+
+  // --- Orders & customers (drill-down below store-level aggregates) ---
+  listStoreOrders: (
+    storeId: string,
+    params: { status?: string; search?: string; page?: number; limit?: number } = {},
+  ) =>
+    apiRequest<{ items: AdminOrderRow[]; total: number; page: number; limit: number }>(
+      `/api/admin/stores/${storeId}/orders${toQuery(params)}`,
+    ),
+  getStoreOrder: (storeId: string, orderId: string) =>
+    apiRequest<AdminOrderDetail>(`/api/admin/stores/${storeId}/orders/${orderId}`),
+  listStoreCustomers: (
+    storeId: string,
+    params: { search?: string; page?: number; limit?: number } = {},
+  ) =>
+    apiRequest<{ items: AdminCustomerRow[]; total: number; page: number; limit: number }>(
+      `/api/admin/stores/${storeId}/customers${toQuery(params)}`,
+    ),
+  getStoreCustomer: (storeId: string, customerId: string) =>
+    apiRequest<AdminCustomerDetail>(`/api/admin/stores/${storeId}/customers/${customerId}`),
   listPendingPayments: (params: { page?: number; limit?: number } = {}) =>
     apiRequest<{ items: MerchantPayment[]; total: number; page: number; limit: number }>(
       `/api/admin/merchant-payments/pending${toQuery(params)}`,
     ),
+  listAllMerchantPayments: (
+    params: { page?: number; limit?: number; storeId?: string; status?: string } = {},
+  ) =>
+    apiRequest<{ items: MerchantPaymentRecord[]; total: number; page: number; limit: number }>(
+      `/api/admin/merchant-payments${toQuery(params)}`,
+    ),
+  getSuspensionEligibleStores: () =>
+    apiRequest<{ items: SuspensionEligibleStore[] }>('/api/admin/billing/suspension-eligible'),
   approveMerchantPayment: (paymentId: string) =>
     apiRequest<MerchantPayment>(`/api/admin/merchant-payments/${paymentId}/approve`, { method: 'POST' }),
   rejectMerchantPayment: (paymentId: string, reason: string) =>
@@ -879,6 +922,82 @@ export interface MerchantPayment {
   invoice?: { id: string; invoiceNumber: string; totalAmount: number; dueDate: string };
 }
 
+export interface MerchantPaymentRecord {
+  id: string;
+  storeId: string;
+  invoiceId: string;
+  method: MerchantPaymentMethod;
+  amount: number;
+  currency: string;
+  referenceId: string;
+  transferDate: string;
+  note: string | null;
+  status: MerchantPaymentStatus;
+  submittedAt: string;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
+  store: { id: string; name: string; slug: string };
+  invoice: { id: string; invoiceNumber: string; periodStart: string; periodEnd: string };
+  verifiedBy: { id: string; name: string } | null;
+}
+
+export interface AdminOrderItem {
+  id: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface AdminOrderRow {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  total: number;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  createdAt: string;
+  customer?: { id: string; name: string | null; phone: string; riskLevel: string } | null;
+  items?: AdminOrderItem[];
+}
+
+export interface AdminOrderDetail extends AdminOrderRow {
+  courierName: string | null;
+  courierTrackingId: string | null;
+  deliveryAddress?: Record<string, unknown>;
+  statusHistory: { id: string; status: string; note: string | null; createdAt: string }[];
+  allowedStatusTransitions: string[];
+}
+
+export interface AdminCustomerRow {
+  id: string;
+  storeId: string;
+  name: string | null;
+  phone: string;
+  email: string | null;
+  riskLevel: string;
+  totalOrders: number;
+  deliveredOrders: number;
+  refusedOrders: number;
+  createdAt: string;
+}
+
+export interface AdminCustomerDetail extends AdminCustomerRow {
+  addresses: unknown[];
+  orders: AdminOrderRow[];
+}
+
+export interface SuspensionEligibleStore {
+  storeId: string;
+  storeName: string;
+  storeSlug: string;
+  storeStatus: string;
+  totalOverdue: number;
+  daysOverdue: number;
+  invoiceNumbers: string[];
+}
+
 export interface PlatformBillingSummary {
   totalInvoiced: number;
   totalCollected: number;
@@ -886,6 +1005,11 @@ export interface PlatformBillingSummary {
   totalMerchantCredit: number;
   pendingPaymentClaims: number;
   overdueInvoices: number;
+  /** amountPaid+creditApplied, prorated per-invoice across its own
+   * subscriptionAmount:platformFeeAmount split — never includes unpaid
+   * invoice totals. See invoice.service.ts#getConfirmedRevenueSplit. */
+  confirmedSubscriptionRevenue: number;
+  confirmedPlatformFeeRevenue: number;
 }
 
 export interface AdminNotification {

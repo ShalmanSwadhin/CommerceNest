@@ -21,6 +21,8 @@ import * as subscriptionService from '../services/subscription.service.js';
 import * as billingService from '../services/billing.service.js';
 import * as invoiceService from '../services/invoice.service.js';
 import * as merchantPaymentService from '../services/merchant-payment.service.js';
+import * as orderService from '../services/order.service.js';
+import * as customerService from '../services/customer.service.js';
 import { prisma } from '../lib/prisma.js';
 import { param } from '../lib/params.js';
 
@@ -356,6 +358,48 @@ adminRouter.post(
   }),
 );
 
+// --- Theme customization requests — thin layer over SupportTicket rows
+// created by store-dashboard's "Request Theme Customization" button (see
+// store.routes.ts POST /theme/customization-request). Approving/rejecting
+// never touches theme data itself — Master Admin still edits the theme
+// manually afterward via Theme Builder / Theme Builder Pro, same as today.
+adminRouter.get(
+  '/theme-requests',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await supportService.listThemeCustomizationRequests({
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      }),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/theme-requests/:id/approve',
+  asyncHandler(async (req, res) => {
+    res.json(await supportService.approveThemeCustomizationRequest(param(req, 'id'), actorFrom(req)));
+  }),
+);
+
+adminRouter.post(
+  '/theme-requests/:id/reject',
+  asyncHandler(async (req, res) => {
+    const reason = z.string().trim().min(1).max(1000).parse(req.body?.reason);
+    res.json(
+      await supportService.rejectThemeCustomizationRequest(param(req, 'id'), actorFrom(req), reason),
+    );
+  }),
+);
+
+adminRouter.post(
+  '/theme-requests/:id/complete',
+  asyncHandler(async (req, res) => {
+    res.json(await supportService.completeThemeCustomizationRequest(param(req, 'id'), actorFrom(req)));
+  }),
+);
+
 // --- Analytics ---
 adminRouter.get(
   '/analytics/summary',
@@ -557,6 +601,16 @@ adminRouter.get(
   }),
 );
 
+// Manual review list only — never suspends anyone. Master Admin reviews
+// this and clicks "Suspend" on a store one at a time via the existing
+// POST /stores/:id/suspend route (unchanged suspend logic).
+adminRouter.get(
+  '/billing/suspension-eligible',
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await invoiceService.getSuspensionEligibleStores() });
+  }),
+);
+
 adminRouter.get(
   '/invoices',
   asyncHandler(async (req, res) => {
@@ -598,6 +652,42 @@ adminRouter.get(
   }),
 );
 
+// --- Orders & customers (drill-down) ---
+// Master Admin previously had no way to see below store-level aggregates
+// (usage/billing/invoices above) into actual order or customer records.
+// Reuses the exact same order.service.ts/customer.service.ts functions
+// Store Admin's own /orders and /customers routes call (store.routes.ts) —
+// storeId here comes from the :id URL param instead of the caller's own
+// scoped store, but the underlying query is identical and already
+// storeId-scoped, so tenant isolation is inherited for free.
+adminRouter.get(
+  '/stores/:id/orders',
+  asyncHandler(async (req, res) => {
+    res.json(await orderService.listOrders(param(req, 'id'), req.query));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/orders/:orderId',
+  asyncHandler(async (req, res) => {
+    res.json(await orderService.getOrder(param(req, 'id'), param(req, 'orderId')));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/customers',
+  asyncHandler(async (req, res) => {
+    res.json(await customerService.listCustomers(param(req, 'id'), req.query));
+  }),
+);
+
+adminRouter.get(
+  '/stores/:id/customers/:customerId',
+  asyncHandler(async (req, res) => {
+    res.json(await customerService.getCustomer(param(req, 'id'), param(req, 'customerId')));
+  }),
+);
+
 // Deliberately namespaced /merchant-payments (never /payments/*) — this
 // codebase already has customer-order bKash verification at /payments/* just
 // above; reusing that prefix here would silently collide (Express matches
@@ -605,6 +695,22 @@ adminRouter.get(
 // would shadow this one forever). Keeping the two payment systems on
 // distinct URL prefixes matches the requirement that they stay entirely
 // separate systems.
+// Platform-wide payment history, any status — distinct path from
+// /merchant-payments/pending (which only ever shows PENDING_VERIFICATION),
+// registered separately so the two never shadow each other regardless of
+// declaration order (Express only cares about overlapping param segments,
+// and neither of these has one).
+adminRouter.get(
+  '/merchant-payments',
+  asyncHandler(async (req, res) => {
+    const page = req.query.page ? Number(req.query.page) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const storeId = typeof req.query.storeId === 'string' ? req.query.storeId : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.json(await merchantPaymentService.listAllPayments({ page, limit, storeId, status }));
+  }),
+);
+
 adminRouter.get(
   '/merchant-payments/pending',
   asyncHandler(async (req, res) => {
