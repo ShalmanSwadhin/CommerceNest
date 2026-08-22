@@ -268,6 +268,44 @@ describe.skipIf(!hasDatabase)('Item 5 — CMS: named page keys and social links'
     expect(publicRes.body.fields.whatsapp).toBe('https://wa.me/8801700000000');
   });
 
+  it('contact info saves under the fixed "contact-info" key and is readable the same way, regardless of which theme the store is on — this key-value store has no theme concept at all', async () => {
+    const { storeId, storeSlug } = await makeStore();
+    const { token } = await loginOwnerToken(storeSlug);
+    const putRes = await request(app)
+      .put(`/api/store/${storeId}/cms/contact-info`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        fields: {
+          address: 'House 1, Road 1, Dhaka',
+          phone: '01700000000',
+          email: 'hello@teststore.com',
+        },
+      });
+    expect(putRes.status).toBe(200);
+
+    const publicRes = await request(app).get(`/api/storefront/${storeSlug}/cms/contact-info`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.fields).toEqual({
+      address: 'House 1, Road 1, Dhaka',
+      phone: '01700000000',
+      email: 'hello@teststore.com',
+    });
+  });
+
+  it('a second store never sees the first store\'s contact-info/social-links (tenant isolation on the fixed-key CMS entries)', async () => {
+    const storeA = await makeStore();
+    const storeB = await makeStore();
+    const { token: tokenA } = await loginOwnerToken(storeA.storeSlug);
+
+    await request(app)
+      .put(`/api/store/${storeA.storeId}/cms/contact-info`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ fields: { address: 'Store A address', phone: '01711111111', email: 'a@example.com' } });
+
+    const bRes = await request(app).get(`/api/storefront/${storeB.storeSlug}/cms/contact-info`);
+    expect(bRes.status).toBe(404);
+  });
+
   // Trial stores are created with a known password (TestPass123!) by
   // makeStore() above via createTrialLead — reuse that directly rather
   // than a second account-creation path.

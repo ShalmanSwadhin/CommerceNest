@@ -12,6 +12,7 @@ import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { createInviteToken } from './auth.service.js';
 import { writeAuditLog } from './audit.service.js';
+import { seedDefaultCmsBlocks } from './cms-defaults.service.js';
 
 export const defaultLayout = {
   sections: [
@@ -111,6 +112,8 @@ export async function createStore(
         sslStatus: 'ACTIVE',
       },
     });
+
+    await seedDefaultCmsBlocks(tx, store.id, store.name);
 
     return { store, owner, inviteToken: invite.token, draft };
   });

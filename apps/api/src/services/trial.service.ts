@@ -14,6 +14,7 @@ import { AppError } from '../lib/errors.js';
 import { emitAfterCommit } from '../events/emit.js';
 import { writeAuditLog } from './audit.service.js';
 import { defaultLayout, defaultTheme } from './store.service.js';
+import { seedDefaultCmsBlocks } from './cms-defaults.service.js';
 import { hashPassword } from '../lib/password.js';
 
 const DEFAULT_TRIAL_DURATION_DAYS = 7;
@@ -202,6 +203,8 @@ export async function createTrialLead(input: unknown) {
         sslStatus: 'ACTIVE',
       },
     });
+
+    await seedDefaultCmsBlocks(tx, store.id, store.name);
 
     const lead = await tx.trialLead.create({
       data: {

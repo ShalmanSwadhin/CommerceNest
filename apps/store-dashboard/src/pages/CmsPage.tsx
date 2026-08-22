@@ -67,8 +67,7 @@ function SocialLinksCard({ storeId, blocks }: { storeId: string; blocks: CmsBloc
       <div>
         <h3 className="font-semibold">Social links</h3>
         <p className="text-sm text-ink-secondary">
-          Shown as footer icons on themes that support them (e.g. Modern Commerce) — those icons render but link
-          nowhere until set here.
+          Shown as footer icons on every theme's storefront — those icons render but link nowhere until set here.
         </p>
       </div>
       <FormField label="Facebook URL" htmlFor="social-facebook">
@@ -82,6 +81,70 @@ function SocialLinksCard({ storeId, blocks }: { storeId: string; blocks: CmsBloc
       </FormField>
       <Button size="sm" loading={mut.isPending} onClick={() => mut.mutate()}>
         Save social links
+      </Button>
+    </Card>
+  );
+}
+
+function ContactInfoCard({ storeId, blocks }: { storeId: string; blocks: CmsBlock[] }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const existing = blocks.find((b) => b.key === 'contact-info')?.fields as
+    | { address?: string; phone?: string; email?: string }
+    | undefined;
+  const [address, setAddress] = useState(existing?.address ?? '');
+  const [phone, setPhone] = useState(existing?.phone ?? '');
+  const [email, setEmail] = useState(existing?.email ?? '');
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    if (hydrated.current || !existing) return;
+    hydrated.current = true;
+    setAddress(existing.address ?? '');
+    setPhone(existing.phone ?? '');
+    setEmail(existing.email ?? '');
+  }, [existing]);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      storeApi.saveCmsKey(storeId, 'contact-info', {
+        address: address.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+      }),
+    onSuccess: () => {
+      toast({ title: 'Contact info saved', tone: 'success' });
+      void qc.invalidateQueries({ queryKey: ['store', storeId, 'cms'] });
+    },
+    onError: (err) =>
+      toast({
+        title: 'Save failed',
+        description: err instanceof ApiClientError ? err.message : 'Unknown error',
+        tone: 'danger',
+      }),
+  });
+
+  return (
+    <Card elevated className="space-y-3">
+      <div>
+        <h3 className="font-semibold">Contact info</h3>
+        <p className="text-sm text-ink-secondary">
+          Shown in the footer on every theme's storefront. Previously this was either hard-coded placeholder text
+          (a made-up "hello@yourslug.com" address, a static "Dhaka, Bangladesh") or missing entirely — set your
+          real details here.
+        </p>
+      </div>
+      <FormField label="Address" htmlFor="contact-address">
+        <Input id="contact-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. House 12, Road 5, Gulshan, Dhaka" />
+      </FormField>
+      <FormField label="Phone" htmlFor="contact-phone">
+        <Input id="contact-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" />
+      </FormField>
+      <FormField label="Email" htmlFor="contact-email">
+        <Input id="contact-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@yourstore.com" />
+      </FormField>
+      <Button size="sm" loading={mut.isPending} onClick={() => mut.mutate()}>
+        Save contact info
       </Button>
     </Card>
   );
@@ -107,9 +170,9 @@ export function CmsPage() {
     if (!q.data || !storeId || initializedForStore.current === storeId) return;
     initializedForStore.current = storeId;
     const raw = (Array.isArray(q.data) ? q.data : q.data.items ?? q.data.data ?? []).filter(
-      // social-links is a fixed-key block, edited via its own dedicated
-      // card below (SocialLinksCard) — never in this freeform blocks list.
-      (b) => b.key !== 'social-links',
+      // social-links and contact-info are fixed-key blocks, each edited via
+      // their own dedicated card below — never in this freeform blocks list.
+      (b) => b.key !== 'social-links' && b.key !== 'contact-info',
     );
     setBlocks(
       raw.map((b, index) => {
@@ -183,6 +246,8 @@ export function CmsPage() {
           </Button>
         </div>
       </div>
+
+      <ContactInfoCard storeId={storeId} blocks={allBlocks} />
 
       <SocialLinksCard storeId={storeId} blocks={allBlocks} />
 

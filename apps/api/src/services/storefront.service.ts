@@ -384,7 +384,11 @@ export function computeShippingCharge(
   return toDecimal(isDhaka ? store.shippingInsideDhaka : store.shippingOutsideDhaka);
 }
 
-export async function checkout(storeSlug: string, input: unknown) {
+export async function checkout(
+  storeSlug: string,
+  input: unknown,
+  authenticatedCustomerId?: string,
+) {
   const store = await resolveStoreBySlug(storeSlug);
   if (store.status !== StoreStatus.ACTIVE) {
     throw AppError.forbidden('Store is not accepting orders');
@@ -456,31 +460,71 @@ export async function checkout(storeSlug: string, input: unknown) {
 
   async function runCheckoutTransaction(orderNumber: string) {
     return prisma.$transaction(async (tx) => {
-      let customer = await tx.customer.findUnique({
-        where: {
-          storeId_phone: { storeId: store.id, phone: data.customerPhone },
-        },
-      });
+      // A signed-in customer's own account always wins over the phone
+      // number typed into the checkout form — the primary registration
+      // path (email/password) never requires a phone at all, so matching
+      // by phone here would silently create a second, disconnected
+      // "guest" Customer row and the order would never show up in their
+      // real account's order history. Guest checkout (no valid session)
+      // keeps the original phone-based match-or-create behavior.
+      let customer = authenticatedCustomerId
+        ? await tx.customer.findFirst({
+            where: { id: authenticatedCustomerId, storeId: store.id },
+          })
+        : null;
 
-      if (!customer) {
-        customer = await tx.customer.create({
-          data: {
-            storeId: store.id,
-            phone: data.customerPhone,
-            name: data.customerName,
-            email: data.customerEmail,
-            preferredLocale: data.preferredLocale,
-          },
-        });
-      } else {
+      if (customer) {
+        // Only fill in a phone the account doesn't have yet — never
+        // overwrite an existing one just because a delivery contact number
+        // happened to be typed at checkout (could be someone else's
+        // number, e.g. ordering as a gift). And never claim a phone
+        // another customer at this store already owns (storeId+phone is
+        // unique) — e.g. this shopper guest-checked-out with this phone
+        // before creating their account; leave the account's phone null
+        // rather than fail the whole checkout over a collision.
+        let phoneToSet = customer.phone;
+        if (!phoneToSet) {
+          const phoneTaken = await tx.customer.findUnique({
+            where: { storeId_phone: { storeId: store.id, phone: data.customerPhone } },
+          });
+          phoneToSet = phoneTaken ? null : data.customerPhone;
+        }
         customer = await tx.customer.update({
           where: { id: customer.id },
           data: {
             name: data.customerName,
             email: data.customerEmail ?? customer.email,
+            phone: phoneToSet,
             preferredLocale: data.preferredLocale,
           },
         });
+      } else {
+        customer = await tx.customer.findUnique({
+          where: {
+            storeId_phone: { storeId: store.id, phone: data.customerPhone },
+          },
+        });
+
+        if (!customer) {
+          customer = await tx.customer.create({
+            data: {
+              storeId: store.id,
+              phone: data.customerPhone,
+              name: data.customerName,
+              email: data.customerEmail,
+              preferredLocale: data.preferredLocale,
+            },
+          });
+        } else {
+          customer = await tx.customer.update({
+            where: { id: customer.id },
+            data: {
+              name: data.customerName,
+              email: data.customerEmail ?? customer.email,
+              preferredLocale: data.preferredLocale,
+            },
+          });
+        }
       }
 
       let discountAmount = new Prisma.Decimal(0);

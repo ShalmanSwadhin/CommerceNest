@@ -152,7 +152,13 @@ export const createCategorySchema = z
       .max(120)
       .regex(PRODUCT_SLUG_REGEX),
     parentId: z.string().cuid().optional(),
-    imageUrl: z.string().trim().max(2000).optional(),
+    // No max length, matching theme branding's logoUrl/faviconUrl
+    // (packages/types/src/schemas/theme.ts) — MediaImageField falls back to
+    // a base64 data: URL when Cloudinary isn't configured (e.g. local dev),
+    // which routinely runs to tens of thousands of characters. A max(2000)
+    // here rejected every such upload with "Validation failed" and no
+    // detail surfaced to the merchant.
+    imageUrl: z.string().trim().optional(),
     seoTitle: z.string().max(70).optional(),
     seoDescription: z.string().max(320).optional(),
   })

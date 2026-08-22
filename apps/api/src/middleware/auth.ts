@@ -149,6 +149,54 @@ export async function requireCustomer(
   }
 }
 
+/**
+ * Populates req.customer when a valid customer JWT is present, but never
+ * blocks the request otherwise — checkout must stay usable as a guest.
+ * Root-caused a real bug: /checkout had no way to know a shopper was
+ * signed in (no auth middleware at all), so it always resolved/created the
+ * order's Customer purely by the phone number typed into the checkout
+ * form. A customer who registered via email/password (no phone required at
+ * signup — see storefrontService.registerCustomer) got every order
+ * silently attached to a brand-new orphan guest record instead of their
+ * real account, which is why it never showed up in "My Orders" — for any
+ * theme, any store, since checkout/account pages are shared code, not
+ * theme-specific.
+ */
+export async function attachCustomerIfPresent(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (req.customer) {
+      next();
+      return;
+    }
+    const token = extractBearer(req);
+    if (!token) {
+      next();
+      return;
+    }
+    const payload = verifyAnyAccessToken(token);
+    if (!isCustomerTokenPayload(payload)) {
+      next();
+      return;
+    }
+    const customer = await prisma.customer.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, storeId: true, phone: true, name: true, email: true },
+    });
+    if (customer && customer.storeId === payload.storeId) {
+      req.customer = customer;
+    }
+    next();
+  } catch {
+    // An expired/malformed token must never block a guest checkout —
+    // silently proceed unauthenticated, same as no token at all.
+    next();
+  }
+}
+
 export function requireRoles(...roles: UserRoleType[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet-async';
@@ -21,6 +21,7 @@ import { useStoreSlug } from '../lib/storeSlug';
 import { t } from '../i18n/dictionary';
 import { cartTotal, useCartStore } from '../stores/cartStore';
 import { useLocaleStore } from '../stores/localeStore';
+import { useAuthStore } from '../stores/authStore';
 
 type Step = 'address' | 'payment' | 'review' | 'bkash';
 
@@ -39,6 +40,7 @@ export function CheckoutPage() {
   const { slug } = useStoreSlug();
   const navigate = useNavigate();
   const locale = useLocaleStore((s) => s.locale);
+  const customer = useAuthStore((s) => s.customer);
   const items = useCartStore((s) => s.items);
   const clear = useCartStore((s) => s.clear);
   const [step, setStep] = useState<Step>('address');
@@ -66,6 +68,22 @@ export function CheckoutPage() {
     customerNote: '',
     couponCode: '',
   });
+
+  // Prefills from the signed-in account, never overwriting what the
+  // shopper has already typed — the actual order->account link no longer
+  // depends on this phone matching (checkout resolves a signed-in
+  // customer by their session, not by this field), but a mismatched phone
+  // here was the original trigger for the bug, so prefilling it too is
+  // one less place to get out of sync.
+  useEffect(() => {
+    if (!customer) return;
+    setForm((f) => ({
+      ...f,
+      customerName: f.customerName || customer.name || '',
+      customerPhone: f.customerPhone || customer.phone || '',
+      customerEmail: f.customerEmail || customer.email || '',
+    }));
+  }, [customer]);
 
   const storeQ = useQuery({
     queryKey: ['storefront', slug, 'home'],

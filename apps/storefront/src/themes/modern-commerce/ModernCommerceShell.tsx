@@ -587,6 +587,14 @@ function Footer({ store, slug }: { store?: StorefrontStore; slug: string }) {
   const social = socialQ.data?.fields as
     | { facebook?: string; instagram?: string; whatsapp?: string }
     | undefined;
+  const contactQ = useQuery({
+    queryKey: ['storefront', slug, 'cms', 'contact-info'],
+    queryFn: () => storefrontApi.cms(slug, 'contact-info'),
+    enabled: !!slug,
+  });
+  const contact = contactQ.data?.fields as
+    | { address?: string; phone?: string; email?: string }
+    | undefined;
   const columns: { title: string; links: { label: string; to: string }[] }[] = [
     {
       title: 'Shop',
@@ -629,22 +637,28 @@ function Footer({ store, slug }: { store?: StorefrontStore; slug: string }) {
             <p className="text-white/60 text-sm leading-relaxed mb-6 max-w-xs">
               {store?.tagline || 'Quality products, curated for the way you live.'}
             </p>
-            <div className="space-y-2 text-sm text-white/60">
-              <div className="flex items-center gap-2">
-                <MapPin size={13} />
-                <span>Dhaka, Bangladesh</span>
+            {contact?.address || contact?.phone || contact?.email ? (
+              <div className="space-y-2 text-sm text-white/60">
+                {contact.address ? (
+                  <div className="flex items-center gap-2">
+                    <MapPin size={13} />
+                    <span>{contact.address}</span>
+                  </div>
+                ) : null}
+                {contact.phone ? (
+                  <div className="flex items-center gap-2">
+                    <Phone size={13} />
+                    <span>{contact.phone}</span>
+                  </div>
+                ) : null}
+                {contact.email ? (
+                  <div className="flex items-center gap-2">
+                    <Mail size={13} />
+                    <span>{contact.email}</span>
+                  </div>
+                ) : null}
               </div>
-              {store?.bkashNumber ? (
-                <div className="flex items-center gap-2">
-                  <Phone size={13} />
-                  <span>{store.bkashNumber}</span>
-                </div>
-              ) : null}
-              <div className="flex items-center gap-2">
-                <Mail size={13} />
-                <span>hello@{store?.slug || 'store'}.com</span>
-              </div>
-            </div>
+            ) : null}
           </div>
           {columns.map((col) => (
             <div key={col.title}>

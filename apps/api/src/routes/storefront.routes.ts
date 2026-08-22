@@ -10,7 +10,7 @@ import {
 } from '@commercenest/types';
 import { asyncHandler, AppError } from '../lib/errors.js';
 import { rateLimit } from '../middleware/rateLimit.js';
-import { requireCustomer } from '../middleware/auth.js';
+import { requireCustomer, attachCustomerIfPresent } from '../middleware/auth.js';
 import * as storefrontService from '../services/storefront.service.js';
 import * as paymentService from '../services/payment.service.js';
 import * as domainService from '../services/domain.service.js';
@@ -308,10 +308,17 @@ storefrontRouter.get(
 storefrontRouter.post(
   '/checkout',
   rateLimit({ windowSeconds: 60, max: 30, keyPrefix: 'rl:checkout' }),
+  attachCustomerIfPresent,
   asyncHandler(async (req, res) => {
     res
       .status(201)
-      .json(await storefrontService.checkout(param(req, 'storeSlug'), req.body));
+      .json(
+        await storefrontService.checkout(
+          param(req, 'storeSlug'),
+          req.body,
+          req.customer?.id,
+        ),
+      );
   }),
 );
 

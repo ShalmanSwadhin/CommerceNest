@@ -3,7 +3,20 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { normalizeThemeDocument, resolveDesignSystem } from '@commercenest/types/schemas/theme';
 import { Button } from '@commercenest/ui';
-import { Clock, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import {
+  Clock,
+  Facebook,
+  Instagram,
+  Mail,
+  MapPin,
+  Menu,
+  MessageCircle,
+  Phone,
+  Search,
+  ShoppingBag,
+  User,
+  X,
+} from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { extractThemeSettings, storefrontApi } from '../lib/api';
 import { CtaLink } from '../lib/ctaLink';
@@ -26,6 +39,23 @@ export function StoreShell() {
     queryFn: () => storefrontApi.resolve(slug),
     enabled: !!slug,
   });
+
+  const contactQ = useQuery({
+    queryKey: ['storefront', slug, 'cms', 'contact-info'],
+    queryFn: () => storefrontApi.cms(slug, 'contact-info'),
+    enabled: !!slug,
+  });
+  const contact = contactQ.data?.fields as
+    | { address?: string; phone?: string; email?: string }
+    | undefined;
+  const socialQ = useQuery({
+    queryKey: ['storefront', slug, 'cms', 'social-links'],
+    queryFn: () => storefrontApi.cms(slug, 'social-links'),
+    enabled: !!slug,
+  });
+  const social = socialQ.data?.fields as
+    | { facebook?: string; instagram?: string; whatsapp?: string }
+    | undefined;
 
   const homeQ = useQuery({
     queryKey: ['storefront', slug, 'home'],
@@ -381,6 +411,68 @@ export function StoreShell() {
                   store?.tagline ||
                   'Shop with confidence.'}
               </p>
+              {contact?.address || contact?.phone || contact?.email ? (
+                <div className="mt-4 space-y-1.5 text-sm text-[var(--store-muted)]">
+                  {contact.address ? (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="size-3.5 shrink-0" />
+                      <span>{contact.address}</span>
+                    </div>
+                  ) : null}
+                  {contact.phone ? (
+                    <div className="flex items-center gap-2">
+                      <Phone className="size-3.5 shrink-0" />
+                      <span>{contact.phone}</span>
+                    </div>
+                  ) : null}
+                  {contact.email ? (
+                    <div className="flex items-center gap-2">
+                      <Mail className="size-3.5 shrink-0" />
+                      <span>{contact.email}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {social?.facebook || social?.instagram || social?.whatsapp ? (
+                <div className="mt-4 flex gap-2">
+                  {social.facebook ? (
+                    <a
+                      href={social.facebook}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Facebook"
+                      className="grid size-8 place-items-center rounded-full border hover:bg-black/5"
+                      style={{ borderColor: 'var(--store-border)' }}
+                    >
+                      <Facebook className="size-3.5" />
+                    </a>
+                  ) : null}
+                  {social.instagram ? (
+                    <a
+                      href={social.instagram}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Instagram"
+                      className="grid size-8 place-items-center rounded-full border hover:bg-black/5"
+                      style={{ borderColor: 'var(--store-border)' }}
+                    >
+                      <Instagram className="size-3.5" />
+                    </a>
+                  ) : null}
+                  {social.whatsapp ? (
+                    <a
+                      href={social.whatsapp}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="WhatsApp"
+                      className="grid size-8 place-items-center rounded-full border hover:bg-black/5"
+                      style={{ borderColor: 'var(--store-border)' }}
+                    >
+                      <MessageCircle className="size-3.5" />
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {(footer.columns?.length
               ? footer.columns
